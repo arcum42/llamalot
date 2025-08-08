@@ -627,36 +627,57 @@ class OllamaClient:
             logger.error(f"Error during streaming chat: {e}")
             raise OllamaConnectionError(f"Streaming chat failed: {e}")
     
-    def generate_embeddings(self, model_name: str, input_text: Union[str, List[str]]) -> List[List[float]]:
+    def generate_embeddings(self, model: str, input_text: Union[str, List[str]], 
+                           truncate: bool = True, options: Optional[Dict[str, Any]] = None,
+                           keep_alive: str = "5m") -> Dict[str, Any]:
         """
-        Generate embeddings for text input.
+        Generate embeddings for text using specified model.
         
         Args:
-            model_name: Name of embedding model
-            input_text: Text or list of texts to embed
+            model: Name of the embedding model
+            input_text: Text or list of texts to generate embeddings for
+            truncate: Whether to truncate text to fit context length
+            options: Additional model parameters
+            keep_alive: How long to keep model loaded
             
         Returns:
-            List of embedding vectors
+            Dictionary containing embeddings and metadata
             
         Raises:
-            OllamaModelNotFoundError: If model doesn't exist
-            OllamaConnectionError: If generation fails
+            OllamaConnectionError: If the request fails
+            OllamaModelNotFoundError: If the model is not found
         """
         try:
-            logger.debug(f"Generating embeddings with {model_name}")
+            logger.debug(f"Generating embeddings with {model}")
             
             if isinstance(input_text, str):
-                input_text = [input_text]
+                api_input = input_text
+            else:
+                api_input = input_text
             
-            response = self.client.embed(model_name, input=input_text)
-            embeddings = response.get('embeddings', [])
+            response = self.client.embed(
+                model=model,
+                input=api_input,
+                truncate=truncate,
+                options=options or {},
+                keep_alive=keep_alive
+            )
             
-            logger.debug(f"Generated {len(embeddings)} embeddings")
-            return embeddings
+            # Convert response to dict format for consistency
+            result = {
+                'model': getattr(response, 'model', model),
+                'embeddings': getattr(response, 'embeddings', []),
+                'total_duration': getattr(response, 'total_duration', 0),
+                'load_duration': getattr(response, 'load_duration', 0),
+                'prompt_eval_count': getattr(response, 'prompt_eval_count', 0)
+            }
+            
+            logger.debug(f"Generated embeddings for {len(input_text) if isinstance(input_text, list) else 1} input(s)")
+            return result
             
         except ResponseError as e:
             if "not found" in str(e).lower():
-                raise OllamaModelNotFoundError(f"Model '{model_name}' not found")
+                raise OllamaModelNotFoundError(f"Model '{model}' not found")
             else:
                 logger.error(f"Ollama API error while generating embeddings: {e}")
                 raise OllamaConnectionError(f"Failed to generate embeddings: {e}")
@@ -780,6 +801,78 @@ class OllamaClient:
         except Exception as e:
             logger.error(f"Error in chat_with_image: {e}")
             raise OllamaConnectionError(f"Failed to chat with image: {e}") from e
+
+    def get_embedding_models(self) -> List[str]:
+        """
+        Get list of models that support embedding generation.
+        
+        Returns:
+            List of embedding model names
+        """
+        try:
+            models = self.list_models()
+            
+            # Filter for models that support embeddings
+            # Common embedding model patterns
+            embedding_patterns = [
+                'embed', 'embedding', 'minilm', 'sentence', 'mxbai', 'nomic',
+                'bge', 'e5', 'instructor', 'gte'
+            ]
+            
+            embedding_models = []
+            for model in models:
+                model_name = model.name.lower()
+                if any(pattern in model_name for pattern in embedding_patterns):
+                    embedding_models.append(model.name)
+            
+            # Add known embedding models that might not match patterns
+            known_embedding_models = [
+                "mxbai-embed-large", "nomic-embed-text", "all-minilm"
+            ]
+            
+            for known_model in known_embedding_models:
+                if known_model not in [m.name for m in models]:
+                    # Model not installed, but still list it as available for pulling
+                    continue
+                if known_model not in embedding_models:
+                    embedding_models.append(known_model)
+            
+            return embedding_models
+            
+        except Exception as e:
+            logger.error(f"Error getting embedding models: {e}")
+            return []
+
+    def test_embedding_model(self, model: str) -> bool:
+        """
+        Test if a model supports embedding generation.
+        
+        Args:
+            model: Model name to test
+            
+        Returns:
+            True if model supports embeddings, False otherwise
+        """
+        try:
+            # Try to generate a simple embedding
+            test_response = self.generate_embeddings(
+                model=model,
+                input_text="test embedding",
+                keep_alive="30s"
+            )
+            
+            # Check if we got valid embeddings
+            embeddings = test_response.get('embeddings', [])
+            if embeddings and len(embeddings) > 0:
+                logger.info(f"Model '{model}' supports embeddings")
+                return True
+            else:
+                logger.warning(f"Model '{model}' does not return valid embeddings")
+                return False
+                
+        except Exception as e:
+            logger.warning(f"Model '{model}' does not support embeddings: {e}")
+            return False
 
     def __str__(self) -> str:
         """String representation of the client."""

@@ -4,6 +4,9 @@ wxpython>=4.2.0
 # Ollama API client
 ollama>=0.5.3
 
+# Vector database for embeddings
+chromadb>=0.4.24
+
 # Database
 #sqlite3  # Built into Python, but listed for clarity
 

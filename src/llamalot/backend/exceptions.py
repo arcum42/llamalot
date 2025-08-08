@@ -49,3 +49,13 @@ class ConfigurationError(LlamaLotError):
 class ChatError(LlamaLotError):
     """Raised when chat operations fail."""
     pass
+
+
+class EmbeddingsError(LlamaLotError):
+    """Raised when embedding operations fail."""
+    pass
+
+
+class VectorDatabaseError(LlamaLotError):
+    """Raised when vector database operations fail."""
+    pass
