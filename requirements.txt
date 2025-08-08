@@ -1,0 +1,23 @@
+# Core GUI framework
+wxpython>=4.2.0
+
+# Ollama API client
+ollama>=0.5.3
+
+# Database
+#sqlite3  # Built into Python, but listed for clarity
+
+# Additional utilities
+requests>=2.31.0
+python-dateutil>=2.8.0
+
+# Development dependencies (optional)
+pytest>=7.0.0
+pytest-cov>=4.0.0
+black>=23.0.0
+flake8>=6.0.0
+mypy>=1.0.0
+
+# Documentation (optional)
+sphinx>=6.0.0
+sphinx-rtd-theme>=1.2.0
