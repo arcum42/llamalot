@@ -25,7 +25,7 @@ class TestOllamaClient(unittest.TestCase):
         self.mock_config.ollama_server.host = "localhost"
         self.mock_config.ollama_server.port = 11434
         self.mock_config.ollama_server.use_https = False
-        self.mock_config.ollama_server.timeout = 30
+        self.mock_config.ollama_server.timeout = 180
         
         # Create mock config manager
         self.mock_config_manager = Mock(spec=ConfigurationManager)

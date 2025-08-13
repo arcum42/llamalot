@@ -18,7 +18,7 @@ class OllamaServerConfig:
     host: str = "localhost"
     port: int = 11434
     use_https: bool = False
-    timeout: int = 30
+    timeout: int = 180
     
     @property
     def base_url(self) -> str:
@@ -30,6 +30,16 @@ class OllamaServerConfig:
     def api_url(self) -> str:
         """Get the API base URL."""
         return f"{self.base_url}/api"
+    
+    @property
+    def effective_timeout(self) -> Optional[int]:
+        """
+        Get the effective timeout value.
+        
+        Returns:
+            None if timeout is -1 or below 1 (no timeout), otherwise the timeout value
+        """
+        return None if self.timeout < 1 else self.timeout
 
 
 @dataclass
@@ -328,7 +338,7 @@ class ApplicationConfig:
             host=server_data.get('host', 'localhost'),
             port=server_data.get('port', 11434),
             use_https=server_data.get('use_https', False),
-            timeout=server_data.get('timeout', 30)
+            timeout=server_data.get('timeout', 180)
         )
         
         # Create UI preferences

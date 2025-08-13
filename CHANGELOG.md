@@ -1,9 +1,36 @@
-# Changelog
+# Chang## [Unreleased]
 
-All notable changes to LlamaLot will be documented in this file.
+### Changed
+#### ⏱️ Timeout Configuration Improvements
+- **Unified Timeout Configuration**: Standardized timeout handling across the application
+  - Default timeout increased from 30 seconds to 180 seconds for better reliability with large models
+  - Settings dialog now allows timeout configuration from -1 to 600 seconds
+  - Value of -1 or any value below 1 now represents "no timeout" (unlimited wait time)
+  - Added `effective_timeout` property that returns `None` for unlimited timeout scenarios
+- **Enhanced Settings UI**: Added tooltip explaining timeout options in Settings > Server tab
+- **Vision Model Support**: Vision models continue to use extended timeouts (4x normal or min 180s)
+
+### Fixed
+#### 🔧 Settings Persistence
+- **Timeout Configuration Saving**: Fixed issue where timeout changes in Settings dialog were not being applied
+  - Added `update_configuration()` method to `BackendManager` to properly update backend components
+  - Settings dialog now properly reinitializes OllamaClient with new timeout values
+  - Configuration changes are immediately applied without requiring application restartotable changes to LlamaLot will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+## [Unreleased]
+
+### Changed
+#### ⏱️ Timeout Configuration Improvements
+- **Unified Timeout Configuration**: Standardized timeout handling across the application
+  - Default timeout increased from 30 seconds to 180 seconds for better reliability with large models
+  - Settings dialog now allows timeout configuration from -1 to 600 seconds
+  - Value of -1 or any value below 1 now represents "no timeout" (unlimited wait time)
+  - Added `effective_timeout` property that returns `None` for unlimited timeout scenarios
+- **Enhanced Settings UI**: Added tooltip explaining timeout options in Settings > Server tab
+- **Vision Model Support**: Vision models continue to use extended timeouts (4x normal or minimum 180s)
 
 ## [1.0.0] - 2025-08-12
 

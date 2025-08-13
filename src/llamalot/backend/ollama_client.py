@@ -59,8 +59,8 @@ class OllamaClient:
             config: Server configuration (defaults to localhost:11434)
         """
         self.config = config or OllamaServerConfig()
-        self.client = Client(host=self.config.base_url, timeout=self.config.timeout)
-        self.async_client = AsyncClient(host=self.config.base_url, timeout=self.config.timeout)
+        self.client = Client(host=self.config.base_url, timeout=self.config.effective_timeout)
+        self.async_client = AsyncClient(host=self.config.base_url, timeout=self.config.effective_timeout)
         
         logger.info(f"Initialized Ollama client for {self.config.base_url}")
     
@@ -755,8 +755,8 @@ class OllamaClient:
             config: New server configuration
         """
         self.config = config
-        self.client = Client(host=self.config.base_url, timeout=self.config.timeout)
-        self.async_client = AsyncClient(host=self.config.base_url, timeout=self.config.timeout)
+        self.client = Client(host=self.config.base_url, timeout=self.config.effective_timeout)
+        self.async_client = AsyncClient(host=self.config.base_url, timeout=self.config.effective_timeout)
         logger.info(f"Updated Ollama client configuration to {self.config.base_url}")
     
     def chat_with_image(
@@ -782,7 +782,8 @@ class OllamaClient:
         """
         # Set up extended timeout for vision models at the start
         # Use minimum 180 seconds for large models (12B+ parameters) to handle server load
-        vision_timeout = max(180, self.config.timeout * 4)  # At least 180 seconds or 4x normal timeout
+        base_timeout = self.config.effective_timeout or 180
+        vision_timeout = max(180, base_timeout * 4)  # At least 180 seconds or 4x normal timeout
         
         try:
             logger.info(f"Starting chat_with_image with model: {model_name}")
@@ -912,6 +913,44 @@ class OllamaClient:
         except Exception as e:
             logger.warning(f"Model '{model}' does not support embeddings: {e}")
             return False
+
+    def unload_model(self, model_name: str) -> bool:
+        """
+        Unload a model from memory by sending an empty chat request with keep_alive=0.
+        
+        Args:
+            model_name: Name of the model to unload
+            
+        Returns:
+            True if unload request was successful, False otherwise
+            
+        Raises:
+            OllamaConnectionError: If the request fails
+            OllamaModelNotFoundError: If the model is not found
+        """
+        try:
+            logger.info(f"Unloading model: {model_name}")
+            
+            # Send empty chat message with keep_alive=0 to unload the model
+            response = self.client.chat(
+                model=model_name,
+                messages=[],  # Empty messages to unload
+                keep_alive=0  # This tells Ollama to unload the model immediately
+            )
+            
+            logger.info(f"Successfully sent unload request for model: {model_name}")
+            return True
+            
+        except ollama.ResponseError as e:
+            if e.status_code == 404:
+                logger.error(f"Model not found for unloading: {model_name}")
+                raise OllamaModelNotFoundError(f"Model '{model_name}' not found")
+            else:
+                logger.error(f"Error unloading model {model_name}: {e}")
+                raise OllamaConnectionError(f"Failed to unload model: {e}")
+        except Exception as e:
+            logger.error(f"Unexpected error unloading model {model_name}: {e}")
+            raise OllamaConnectionError(f"Unexpected error during unload: {e}")
 
     def __str__(self) -> str:
         """String representation of the client."""

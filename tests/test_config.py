@@ -102,14 +102,14 @@ class TestConfigurationManager(unittest.TestCase):
             host="test.server.com",
             port=11434,
             use_https=True,
-            timeout=60
+            timeout=180
         )
         
         config = self.manager.config
         self.assertEqual(config.ollama_server.host, "test.server.com")
         self.assertEqual(config.ollama_server.port, 11434)
         self.assertTrue(config.ollama_server.use_https)
-        self.assertEqual(config.ollama_server.timeout, 60)
+        self.assertEqual(config.ollama_server.timeout, 180)
     
     def test_update_ui_preferences(self):
         """Test updating UI preferences."""
@@ -212,7 +212,7 @@ class TestConfigurationManager(unittest.TestCase):
                 "host": "import.test.com",
                 "port": 11434,
                 "use_https": False,
-                "timeout": 30
+                "timeout": 180
             },
             "ui_preferences": {
                 "window_width": 1024,

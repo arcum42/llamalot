@@ -84,3 +84,51 @@ class BackendManager:
     def is_initialized(self) -> bool:
         """Check if backend is fully initialized."""
         return self._initialized
+    
+    def update_configuration(self, new_config: ApplicationConfig) -> bool:
+        """
+        Update the backend configuration and reinitialize affected components.
+        
+        Args:
+            new_config: The new configuration to apply
+            
+        Returns:
+            True if update was successful, False otherwise
+        """
+        old_config = self.config  # Store old config before updating
+        
+        try:
+            self.config = new_config
+            
+            # Check if Ollama server configuration changed
+            if (old_config and 
+                (old_config.ollama_server.host != new_config.ollama_server.host or
+                 old_config.ollama_server.port != new_config.ollama_server.port or
+                 old_config.ollama_server.use_https != new_config.ollama_server.use_https or
+                 old_config.ollama_server.timeout != new_config.ollama_server.timeout)):
+                
+                # Reinitialize Ollama client with new configuration
+                logger.info(f"Ollama server configuration changed, reinitializing client")
+                logger.info(f"Old config: {old_config.ollama_server}")
+                logger.info(f"New config: {new_config.ollama_server}")
+                
+                self.ollama_client = OllamaClient(new_config.ollama_server)
+                
+                # Update cache manager with new client
+                if self.cache_manager:
+                    self.cache_manager.set_ollama_client(self.ollama_client)
+                
+                logger.info(f"Ollama client updated with new configuration: {new_config.ollama_server}")
+            
+            # Save the new configuration
+            new_config.save_to_file()
+            logger.info("Configuration updated and saved successfully")
+            
+            return True
+            
+        except Exception as e:
+            logger.error(f"Failed to update configuration: {e}")
+            # Restore old configuration on failure
+            if old_config:
+                self.config = old_config
+            return False

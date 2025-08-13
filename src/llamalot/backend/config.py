@@ -111,7 +111,7 @@ class ConfigurationManager:
         self._loaded = True
         return self._config
     
-    def update_ollama_server(self, host: str, port: int, use_https: bool = False, timeout: int = 30) -> None:
+    def update_ollama_server(self, host: str, port: int, use_https: bool = False, timeout: int = 180) -> None:
         """
         Update Ollama server configuration.
         

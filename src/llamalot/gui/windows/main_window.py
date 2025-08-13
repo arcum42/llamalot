@@ -179,6 +179,7 @@ class MainWindow(wx.Frame):
             "Pull Model...": self._on_pull_model,
             "Create Model...": self._on_create_model,
             "Delete Model...": self._on_delete_model,
+            "Stop Model...": self._on_stop_model,
             "New Chat": self.on_new_chat,
             "Export Chat...": self._on_export_chat,
             # Edit menu (Undo/Redo are disabled, so no handlers needed)
@@ -242,6 +243,13 @@ class MainWindow(wx.Frame):
             self.models_tab.on_delete_model(event)
         else:
             self.on_delete_model(event)
+
+    def _on_stop_model(self, event: wx.CommandEvent) -> None:
+        """Handle stop model menu item."""
+        if hasattr(self, 'models_tab') and self.models_tab:
+            self.models_tab.on_stop_model(event)
+        else:
+            wx.MessageBox("Models tab not available.", "Error", wx.OK | wx.ICON_ERROR)
 
     def _on_export_chat(self, event: wx.CommandEvent) -> None:
         """Handle export chat menu item."""
@@ -1468,16 +1476,21 @@ Title:"""
             # Create and show settings dialog
             dlg = SettingsDialog(self, self.config, model_names)
             if dlg.ShowModal() == wx.ID_OK:
-                # Save the updated configuration
+                # Update the backend configuration
                 updated_config = dlg.get_config()
-                self.config = updated_config
-                self.config.save_to_file()
                 
-                # Apply settings that can be changed immediately
-                self._apply_settings_changes()
-                
-                wx.MessageBox("Settings saved successfully!\nSome changes may require restarting the application.", 
-                             "Settings", wx.OK | wx.ICON_INFORMATION)
+                if self.backend_manager.update_configuration(updated_config):
+                    # Configuration updated successfully
+                    self.config = updated_config  # Update local reference
+                    
+                    # Apply settings that can be changed immediately
+                    self._apply_settings_changes()
+                    
+                    wx.MessageBox("Settings saved successfully!\nSome changes may require restarting the application.", 
+                                 "Settings", wx.OK | wx.ICON_INFORMATION)
+                else:
+                    wx.MessageBox("Failed to save settings. Please check the logs for details.", 
+                                 "Settings Error", wx.OK | wx.ICON_ERROR)
             
             dlg.Destroy()
             

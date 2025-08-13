@@ -362,7 +362,8 @@ class SettingsDialog(wx.Dialog):
         grid_sizer.Add(self.port_spin, 0, wx.EXPAND)
         
         grid_sizer.Add(wx.StaticText(server_panel, label="Timeout (seconds):"), 0, wx.ALIGN_CENTER_VERTICAL)
-        self.timeout_spin = wx.SpinCtrl(server_panel, min=5, max=300, initial=30)
+        self.timeout_spin = wx.SpinCtrl(server_panel, min=-1, max=600, initial=180)
+        self.timeout_spin.SetToolTip("Connection timeout in seconds. Use -1 for no timeout (unlimited).")
         grid_sizer.Add(self.timeout_spin, 0, wx.EXPAND)
         
         server_box.Add(grid_sizer, 0, wx.EXPAND | wx.ALL, 8)
@@ -647,14 +648,18 @@ class SettingsDialog(wx.Dialog):
             use_https = self.use_https_cb.GetValue()
             timeout = self.timeout_spin.GetValue()
             
+            # Handle timeout logic
+            effective_timeout = None if timeout < 1 else timeout
+            
             protocol = "https" if use_https else "http"
             url = f"{protocol}://{host}:{port}/api/tags"
             
             import requests
-            response = requests.get(url, timeout=timeout)
+            response = requests.get(url, timeout=effective_timeout)
             response.raise_for_status()
             
-            wx.MessageBox("Connection successful!", "Test Connection", wx.OK | wx.ICON_INFORMATION)
+            timeout_msg = "no timeout" if effective_timeout is None else f"{timeout}s timeout"
+            wx.MessageBox(f"Connection successful with {timeout_msg}!", "Test Connection", wx.OK | wx.ICON_INFORMATION)
             
         except Exception as e:
             wx.MessageBox(f"Connection failed: {e}", "Test Connection", wx.OK | wx.ICON_ERROR)
