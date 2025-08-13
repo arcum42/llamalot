@@ -6,6 +6,7 @@ embeddings, and RAG capabilities with document import/export functionality.
 """
 
 import wx
+import wx.lib.scrolledpanel
 import logging
 from typing import List, Dict, Any, Optional, Tuple
 from pathlib import Path
@@ -26,7 +27,7 @@ from llamalot.gui.dialogs import (
 logger = get_logger(__name__)
 
 
-class EmbeddingsPanel(wx.Panel):
+class EmbeddingsPanel(wx.lib.scrolledpanel.ScrolledPanel):
     """
     Main panel for embeddings management with collections, documents, and search.
     
@@ -46,6 +47,7 @@ class EmbeddingsPanel(wx.Panel):
             parent: Parent window/panel
         """
         super().__init__(parent)
+        self.SetupScrolling()
         
         # Initialize backend
         self.config_manager = ConfigurationManager()

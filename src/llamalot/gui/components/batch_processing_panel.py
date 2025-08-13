@@ -6,6 +6,7 @@ and process them in batch to generate text descriptions saved alongside each ima
 """
 
 import wx
+import wx.lib.scrolledpanel
 import os
 import subprocess
 import threading
@@ -21,7 +22,7 @@ from llamalot.utils.logging_config import get_logger
 logger = get_logger(__name__)
 
 
-class BatchProcessingPanel(wx.Panel):
+class BatchProcessingPanel(wx.lib.scrolledpanel.ScrolledPanel):
     """
     Panel for batch processing images with vision models.
     
@@ -44,6 +45,7 @@ class BatchProcessingPanel(wx.Panel):
             on_status_update: Optional callback for status updates
         """
         super().__init__(parent)
+        self.SetupScrolling()
         
         self.ollama_client = ollama_client
         self.cache_manager = cache_manager

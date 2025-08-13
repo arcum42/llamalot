@@ -35,7 +35,6 @@ class MenuManager:
         self._create_file_menu()
         self._create_edit_menu()
         self._create_view_menu()
-        self._create_tools_menu()
         self._create_help_menu()
         
         return self.menu_bar
@@ -44,23 +43,24 @@ class MenuManager:
         """Create the File menu."""
         file_menu = wx.Menu()
         
-        # New items
-        new_menu = wx.Menu()
-        new_menu.Append(wx.ID_ANY, "New Chat\tCtrl+N", "Start a new chat conversation")
-        new_menu.Append(wx.ID_ANY, "New Model\tCtrl+Shift+N", "Create a new model")
-        file_menu.AppendSubMenu(new_menu, "New")
+        # New Chat
+        file_menu.Append(wx.ID_ANY, "New Chat\tCtrl+N", "Start a new chat conversation")
         
         file_menu.AppendSeparator()
         
-        # Import/Export
-        file_menu.Append(wx.ID_ANY, "Import Models...", "Import models from file")
+        # Model Management
+        file_menu.Append(wx.ID_ANY, "Pull Model...", "Download a new model")
+        file_menu.Append(wx.ID_ANY, "Create Model...\tCtrl+Shift+N", "Create a custom model")
+        file_menu.Append(wx.ID_ANY, "Delete Model...", "Delete selected model")
+        
+        file_menu.AppendSeparator()
+        
+        # Export
         file_menu.Append(wx.ID_ANY, "Export Chat...\tCtrl+E", "Export current chat")
         
         file_menu.AppendSeparator()
         
-        # Settings and Exit
-        file_menu.Append(wx.ID_PREFERENCES, "Settings...\tCtrl+,", "Open application settings")
-        file_menu.AppendSeparator()
+        # Exit
         file_menu.Append(wx.ID_EXIT, "Exit\tCtrl+Q", "Exit the application")
         
         self.menu_bar.Append(file_menu, "File")
@@ -69,17 +69,21 @@ class MenuManager:
         """Create the Edit menu."""
         edit_menu = wx.Menu()
         
-        edit_menu.Append(wx.ID_UNDO, "Undo\tCtrl+Z", "Undo last action")
-        edit_menu.Append(wx.ID_REDO, "Redo\tCtrl+Y", "Redo last action")
+        # Add Undo/Redo but disable them since they don't work reliably
+        undo_item = edit_menu.Append(wx.ID_UNDO, "Undo\tCtrl+Z", "Undo last action")
+        redo_item = edit_menu.Append(wx.ID_REDO, "Redo\tCtrl+Y", "Redo last action")
+        undo_item.Enable(False)
+        redo_item.Enable(False)
         edit_menu.AppendSeparator()
         
         edit_menu.Append(wx.ID_CUT, "Cut\tCtrl+X", "Cut selected text")
         edit_menu.Append(wx.ID_COPY, "Copy\tCtrl+C", "Copy selected text")
         edit_menu.Append(wx.ID_PASTE, "Paste\tCtrl+V", "Paste text from clipboard")
+        
         edit_menu.AppendSeparator()
         
-        edit_menu.Append(wx.ID_SELECTALL, "Select All\tCtrl+A", "Select all text")
-        edit_menu.Append(wx.ID_FIND, "Find...\tCtrl+F", "Find text")
+        # Settings
+        edit_menu.Append(wx.ID_PREFERENCES, "Settings...\tCtrl+,", "Open application settings")
         
         self.menu_bar.Append(edit_menu, "Edit")
     
@@ -87,11 +91,12 @@ class MenuManager:
         """Create the View menu."""
         view_menu = wx.Menu()
         
+        # Tab switching in the same order as tabs are created
         view_menu.Append(wx.ID_ANY, "Models Tab\tCtrl+1", "Switch to Models tab")
         view_menu.Append(wx.ID_ANY, "Chat Tab\tCtrl+2", "Switch to Chat tab")
-        view_menu.Append(wx.ID_ANY, "History Tab\tCtrl+3", "Switch to History tab")
+        view_menu.Append(wx.ID_ANY, "Batch Tab\tCtrl+3", "Switch to Batch tab")
         view_menu.Append(wx.ID_ANY, "Embeddings Tab\tCtrl+4", "Switch to Embeddings tab")
-        view_menu.Append(wx.ID_ANY, "Batch Tab\tCtrl+5", "Switch to Batch tab")
+        view_menu.Append(wx.ID_ANY, "History Tab\tCtrl+5", "Switch to History tab")
         
         view_menu.AppendSeparator()
         
@@ -99,25 +104,6 @@ class MenuManager:
         view_menu.Append(wx.ID_ANY, "Toggle Fullscreen\tF11", "Toggle fullscreen mode")
         
         self.menu_bar.Append(view_menu, "View")
-    
-    def _create_tools_menu(self) -> None:
-        """Create the Tools menu."""
-        tools_menu = wx.Menu()
-        
-        tools_menu.Append(wx.ID_ANY, "Pull Model...", "Download a new model")
-        tools_menu.Append(wx.ID_ANY, "Create Model...", "Create a custom model")
-        tools_menu.Append(wx.ID_ANY, "Delete Model...", "Delete selected model")
-        
-        tools_menu.AppendSeparator()
-        
-        tools_menu.Append(wx.ID_ANY, "Clear Cache", "Clear application cache")
-        tools_menu.Append(wx.ID_ANY, "Reset Database", "Reset application database")
-        
-        tools_menu.AppendSeparator()
-        
-        tools_menu.Append(wx.ID_ANY, "Check for Updates", "Check for application updates")
-        
-        self.menu_bar.Append(tools_menu, "Tools")
     
     def _create_help_menu(self) -> None:
         """Create the Help menu."""

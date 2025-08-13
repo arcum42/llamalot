@@ -6,6 +6,7 @@ saved chat conversations.
 """
 
 import wx
+import wx.lib.scrolledpanel
 import logging
 import os
 from datetime import datetime
@@ -34,7 +35,8 @@ class HistoryTab:
     def create_history_tab(self) -> None:
         """Create the chat history tab with conversation list and viewer."""
         # Create the history panel
-        self.history_panel = wx.Panel(self.notebook)
+        self.history_panel = wx.lib.scrolledpanel.ScrolledPanel(self.notebook)
+        self.history_panel.SetupScrolling()
         
         # Main splitter for conversation list and detail view
         splitter = wx.SplitterWindow(self.history_panel, style=wx.SP_3D | wx.SP_LIVE_UPDATE)

@@ -177,7 +177,22 @@ class MainWindow(wx.Frame):
             wx.ID_EXIT: self._on_exit,
             wx.ID_REFRESH: self._on_refresh_models,
             "Pull Model...": self._on_pull_model,
+            "Create Model...": self._on_create_model,
+            "Delete Model...": self._on_delete_model,
             "New Chat": self.on_new_chat,
+            "Export Chat...": self._on_export_chat,
+            # Edit menu (Undo/Redo are disabled, so no handlers needed)
+            wx.ID_CUT: self._on_cut,
+            wx.ID_COPY: self._on_copy,
+            wx.ID_PASTE: self._on_paste,
+            # View menu
+            "Models Tab": self._on_switch_to_models_tab,
+            "Chat Tab": self._on_switch_to_chat_tab,
+            "Batch Tab": self._on_switch_to_batch_tab,
+            "Embeddings Tab": self._on_switch_to_embeddings_tab,
+            "History Tab": self._on_switch_to_history_tab,
+            "Refresh All": self._on_refresh_all,
+            "Toggle Fullscreen": self._on_toggle_fullscreen,
             wx.ID_ABOUT: self._on_about,
         }
         
@@ -208,9 +223,299 @@ class MainWindow(wx.Frame):
             self.models_tab.on_refresh(event)
     
     def _on_pull_model(self, event: wx.CommandEvent) -> None:
-        """Delegate pull model to the models tab."""
-        if hasattr(self, 'models_tab'):
+        """Handle pull model menu item."""
+        if hasattr(self, 'models_tab') and self.models_tab:
             self.models_tab.on_pull_model(event)
+        else:
+            self.on_pull_model(event)
+
+    def _on_create_model(self, event: wx.CommandEvent) -> None:
+        """Handle create model menu item."""
+        if hasattr(self, 'models_tab') and self.models_tab:
+            self.models_tab.on_create_model(event)
+        else:
+            self.on_create_model(event)
+
+    def _on_delete_model(self, event: wx.CommandEvent) -> None:
+        """Handle delete model menu item."""
+        if hasattr(self, 'models_tab') and self.models_tab:
+            self.models_tab.on_delete_model(event)
+        else:
+            self.on_delete_model(event)
+
+    def _on_export_chat(self, event: wx.CommandEvent) -> None:
+        """Handle export chat menu item."""
+        try:
+            # Get the current tab
+            current_tab = self.notebook.GetSelection()
+            
+            if current_tab == 1:  # Chat tab
+                # Export current conversation from chat tab
+                if hasattr(self, 'chat_tab') and self.chat_tab:
+                    self._export_current_chat()
+            elif current_tab == 2:  # History tab  
+                # Use history tab's export functionality
+                if hasattr(self, 'history_tab') and self.history_tab:
+                    self.history_tab.on_export_chat(event)
+            else:
+                # If not on chat or history tab, try to export current chat anyway
+                self._export_current_chat()
+                
+        except Exception as e:
+            logger.error(f"Error exporting chat: {e}")
+            wx.MessageBox(f"Error exporting chat: {e}", "Error", wx.OK | wx.ICON_ERROR)
+
+    def _export_current_chat(self) -> None:
+        """Export the current conversation from chat tab."""
+        try:
+            if not hasattr(self, 'chat_tab') or not self.chat_tab:
+                wx.MessageBox("Chat tab not available", "Error", wx.OK | wx.ICON_ERROR)
+                return
+                
+            # Get current conversation from chat tab
+            if not hasattr(self.chat_tab, 'current_conversation') or not self.chat_tab.current_conversation:
+                wx.MessageBox("No active conversation to export", "Info", wx.OK | wx.ICON_INFORMATION)
+                return
+                
+            conversation = self.chat_tab.current_conversation
+            
+            # Create safe filename from conversation title
+            title = conversation.title or f"conversation_{conversation.conversation_id[:8]}"
+            safe_title = "".join(c for c in title if c.isalnum() or c in (' ', '-', '_')).rstrip()
+            if not safe_title:
+                safe_title = f"current_chat_{conversation.conversation_id[:8]}"
+            
+            # Show format selection dialog
+            format_dlg = wx.SingleChoiceDialog(
+                self,
+                "Choose export format:",
+                "Export Format",
+                ["Text (.txt)", "Markdown (.md)"]
+            )
+            
+            if format_dlg.ShowModal() != wx.ID_OK:
+                format_dlg.Destroy()
+                return
+                
+            format_choice = format_dlg.GetSelection()
+            format_dlg.Destroy()
+            
+            # Determine file extension and default filename
+            if format_choice == 0:  # Text
+                extension = ".txt"
+                default_filename = f"{safe_title}.txt"
+            else:  # Markdown
+                extension = ".md"
+                default_filename = f"{safe_title}.md"
+            
+            # Show file save dialog
+            with wx.FileDialog(
+                self,
+                f"Export conversation as {extension[1:].upper()}",
+                defaultFile=default_filename,
+                wildcard=f"{extension[1:].upper()} files (*{extension})|*{extension}|All files (*.*)|*.*",
+                style=wx.FD_SAVE | wx.FD_OVERWRITE_PROMPT
+            ) as save_dlg:
+                
+                if save_dlg.ShowModal() == wx.ID_OK:
+                    filepath = save_dlg.GetPath()
+                    
+                    # Use the same export methods as history tab
+                    if hasattr(self, 'history_tab') and self.history_tab:
+                        if format_choice == 0:  # Text format
+                            self.history_tab._export_as_text(conversation, filepath)
+                        else:  # Markdown format
+                            self.history_tab._export_as_markdown(conversation, filepath)
+                    else:
+                        # Fallback basic export
+                        self._basic_export_conversation(conversation, filepath, format_choice == 1)
+                    
+                    logger.info(f"Exported current conversation to {filepath}")
+                    wx.MessageBox(
+                        f"Conversation exported successfully to:\n{filepath}",
+                        "Export Complete",
+                        wx.OK | wx.ICON_INFORMATION
+                    )
+                    
+        except Exception as e:
+            logger.error(f"Error exporting current chat: {e}")
+            wx.MessageBox(f"Error exporting conversation: {e}", "Error", wx.OK | wx.ICON_ERROR)
+
+    def _basic_export_conversation(self, conversation, filepath: str, is_markdown: bool = False) -> None:
+        """Basic fallback method to export conversation."""
+        try:
+            with open(filepath, 'w', encoding='utf-8') as f:
+                if is_markdown:
+                    f.write(f"# {conversation.title or 'Chat Conversation'}\n\n")
+                    f.write(f"**Model:** {conversation.model_name or 'Unknown'}  \n\n")
+                    f.write("---\n\n")
+                    
+                    for i, message in enumerate(conversation.messages):
+                        if message.role.value == 'user':
+                            f.write("## 👤 User\n\n")
+                        elif message.role.value == 'assistant':
+                            f.write("## 🤖 Assistant\n\n")
+                        else:
+                            f.write(f"## [{message.role.value}]\n\n")
+                        
+                        f.write(f"{message.content.strip()}\n\n")
+                        if i < len(conversation.messages) - 1:
+                            f.write("---\n\n")
+                else:
+                    f.write(f"Conversation: {conversation.title or 'Chat Conversation'}\n")
+                    f.write(f"Model: {conversation.model_name or 'Unknown'}\n")
+                    f.write("=" * 50 + "\n\n")
+                    
+                    for i, message in enumerate(conversation.messages):
+                        if message.role.value == 'user':
+                            f.write("User:\n")
+                        elif message.role.value == 'assistant':
+                            f.write("Assistant:\n")
+                        else:
+                            f.write(f"[{message.role.value}]:\n")
+                        
+                        f.write(f"{message.content}\n")
+                        if i < len(conversation.messages) - 1:
+                            f.write("\n" + "-" * 40 + "\n\n")
+                            
+        except Exception as e:
+            logger.error(f"Error writing export file: {e}")
+            raise
+    
+    # Edit menu handlers
+    def _on_cut(self, event: wx.CommandEvent) -> None:
+        """Handler for Cut menu item"""
+        focus_window = wx.Window.FindFocus()
+        if focus_window and hasattr(focus_window, 'CanCut') and focus_window.CanCut():
+            focus_window.Cut()
+
+    def _on_copy(self, event: wx.CommandEvent) -> None:
+        """Handler for Copy menu item"""
+        focus_window = wx.Window.FindFocus()
+        if focus_window and hasattr(focus_window, 'CanCopy') and focus_window.CanCopy():
+            focus_window.Copy()
+
+    def _on_paste(self, event: wx.CommandEvent) -> None:
+        """Handler for Paste menu item with smart image detection"""
+        focus_window = wx.Window.FindFocus()
+        
+        # Check if we have an image on the clipboard
+        if wx.TheClipboard.Open():
+            try:
+                if wx.TheClipboard.IsSupported(wx.DataFormat(wx.DF_BITMAP)):
+                    # We have an image on clipboard - check if we're in the chat tab
+                    current_tab = self.notebook.GetSelection()
+                    if current_tab == 1 and hasattr(self, 'chat_tab') and self.chat_tab:  # Chat tab
+                        # We're in chat tab - try to add image
+                        bitmap_data = wx.BitmapDataObject()
+                        if wx.TheClipboard.GetData(bitmap_data):
+                            bitmap = bitmap_data.GetBitmap()
+                            if bitmap.IsOk():
+                                # Convert bitmap to temporary file and add to chat
+                                self._add_clipboard_image_to_chat(bitmap)
+                                wx.TheClipboard.Close()
+                                return
+                
+                # Fall back to regular paste if not image or not in chat tab
+                if focus_window and hasattr(focus_window, 'CanPaste') and focus_window.CanPaste():
+                    focus_window.Paste()
+                    
+            finally:
+                wx.TheClipboard.Close()
+        else:
+            # Clipboard not available, try regular paste
+            if focus_window and hasattr(focus_window, 'CanPaste') and focus_window.CanPaste():
+                focus_window.Paste()
+
+    # View menu handlers
+    def _on_switch_to_models_tab(self, event: wx.CommandEvent) -> None:
+        """Switch to Models tab (Ctrl+1)"""
+        if hasattr(self, 'notebook') and self.notebook:
+            self.notebook.SetSelection(0)  # Models is first tab
+
+    def _on_switch_to_chat_tab(self, event: wx.CommandEvent) -> None:
+        """Switch to Chat tab (Ctrl+2)"""
+        if hasattr(self, 'notebook') and self.notebook:
+            self.notebook.SetSelection(1)  # Chat is second tab
+
+    def _on_switch_to_batch_tab(self, event: wx.CommandEvent) -> None:
+        """Switch to Batch tab (Ctrl+3)"""
+        if hasattr(self, 'notebook') and self.notebook:
+            self.notebook.SetSelection(2)  # Batch is third tab
+
+    def _on_switch_to_embeddings_tab(self, event: wx.CommandEvent) -> None:
+        """Switch to Embeddings tab (Ctrl+4)"""
+        if hasattr(self, 'notebook') and self.notebook:
+            self.notebook.SetSelection(3)  # Embeddings is fourth tab
+
+    def _on_switch_to_history_tab(self, event: wx.CommandEvent) -> None:
+        """Switch to History tab (Ctrl+5)"""
+        if hasattr(self, 'notebook') and self.notebook:
+            self.notebook.SetSelection(4)  # History is fifth tab
+
+    def _on_refresh_all(self, event: wx.CommandEvent) -> None:
+        """Refresh all data (F5)"""
+        try:
+            # Refresh models
+            if hasattr(self, 'models_tab') and self.models_tab:
+                self.models_tab.refresh_models()
+            
+            # Refresh history
+            if hasattr(self, 'history_tab') and self.history_tab:
+                self.history_tab.refresh_conversation_list()
+                
+            # Refresh embeddings collections (use the panel's method)
+            if hasattr(self, 'embeddings_tab') and self.embeddings_tab:
+                if hasattr(self.embeddings_tab, 'embeddings_panel') and self.embeddings_tab.embeddings_panel:
+                    self.embeddings_tab.embeddings_panel._refresh_collections()
+                
+            # Show status message
+            if hasattr(self, 'status_bar') and self.status_bar:
+                self.status_bar.SetStatusText("All data refreshed", 0)
+                wx.CallLater(3000, lambda: self.status_bar.SetStatusText("", 0) if self.status_bar else None)
+                
+        except Exception as e:
+            logger.error(f"Error refreshing all data: {e}")
+            wx.MessageBox(f"Error refreshing data: {str(e)}", "Error", wx.OK | wx.ICON_ERROR)
+
+    def _on_toggle_fullscreen(self, event: wx.CommandEvent) -> None:
+        """Toggle fullscreen mode (F11)"""
+        try:
+            self.ShowFullScreen(not self.IsFullScreen())
+        except Exception as e:
+            logger.error(f"Error toggling fullscreen: {e}")
+            wx.MessageBox(f"Error toggling fullscreen: {str(e)}", "Error", wx.OK | wx.ICON_ERROR)
+
+    # Tools menu handlers
+    def _add_clipboard_image_to_chat(self, bitmap: wx.Bitmap) -> None:
+        """Helper method to add clipboard image to chat"""
+        try:
+            import tempfile
+            import os
+            
+            # Create temporary file
+            temp_dir = tempfile.gettempdir()
+            temp_filename = f"clipboard_image_{wx.GetUTCTimeMillis()}.png"
+            temp_path = os.path.join(temp_dir, temp_filename)
+            
+            # Save bitmap to temporary file
+            bitmap.SaveFile(temp_path, wx.BITMAP_TYPE_PNG)
+            
+            # Add to chat's image panel if it exists
+            if hasattr(self.chat_tab, 'image_panel') and self.chat_tab.image_panel:
+                # Add the image path to the panel
+                self.chat_tab.image_panel.add_images_from_paths([temp_path])
+                
+                # Show a brief message
+                wx.CallAfter(lambda: wx.MessageBox("Image from clipboard added to chat", "Success", 
+                                                 wx.OK | wx.ICON_INFORMATION))
+            else:
+                logger.warning("Chat tab or image panel not available for clipboard image")
+                wx.MessageBox("Chat image panel not available", "Warning", wx.OK | wx.ICON_WARNING)
+            
+        except Exception as e:
+            logger.error(f"Failed to add clipboard image: {e}")
+            wx.MessageBox(f"Failed to add clipboard image: {str(e)}", "Error", wx.OK | wx.ICON_ERROR)
     
 
     
@@ -779,24 +1084,19 @@ Title:"""
     def on_new_chat(self, event: wx.CommandEvent) -> None:
         """Handle new chat button click."""
         try:
-            # Save current conversation if it exists and has messages
-            self.save_current_conversation()
-            
-            # Clear the chat display
-            self.chat_output.SetValue("")
-            
-            # Start a new conversation with the current model
-            if self.current_model:
-                self._start_new_conversation()
-                logger.info(f"Started new chat with {self.current_model.name}")
+            # Delegate to chat tab if available
+            if hasattr(self, 'chat_tab') and self.chat_tab:
+                self.chat_tab.on_new_chat(event)
                 
-                # Update status
-                self.status_bar.SetStatusText(f"New chat started with {self.current_model.name}", 0)
+                # Switch to chat tab to show the new conversation
+                if hasattr(self, 'notebook') and self.notebook:
+                    self.notebook.SetSelection(1)  # Chat tab is index 1
             else:
-                wx.MessageBox("Please select a model first.", "No Model Selected", wx.OK | wx.ICON_WARNING)
+                wx.MessageBox("Chat functionality not available.", "Error", wx.OK | wx.ICON_ERROR)
                 
         except Exception as e:
             logger.error(f"Error starting new chat: {e}")
+            wx.MessageBox(f"Error starting new chat: {e}", "Error", wx.OK | wx.ICON_ERROR)
 
     def on_models_new_chat(self, event: wx.CommandEvent) -> None:
         """Handle new chat button click from Models tab."""

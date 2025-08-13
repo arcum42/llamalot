@@ -7,6 +7,7 @@
 #- Message formatting and display
 
 import wx
+import wx.lib.scrolledpanel
 import uuid
 import threading
 import markdown
@@ -22,7 +23,7 @@ from llamalot.gui.components.image_attachment_panel import ImageAttachmentPanel
 logger = getLogger(__name__)
 
 
-class ChatTab(wx.Panel):
+class ChatTab(wx.lib.scrolledpanel.ScrolledPanel):
     """Chat tab component for conversation with Ollama models."""
     
     def __init__(self, parent: wx.Window, main_window):
@@ -33,6 +34,7 @@ class ChatTab(wx.Panel):
             main_window: Reference to the main window for access to managers and status updates
         """
         super().__init__(parent)
+        self.SetupScrolling()
         self.main_window = main_window
         
         # Chat state

@@ -68,13 +68,15 @@ class SettingsDialog(wx.Dialog):
     
     def _create_general_page(self) -> None:
         """Create the general settings page."""
-        panel = wx.Panel(self.notebook)
-        self.notebook.AddPage(panel, "General")
+        # Create a scrolled panel to handle overflow content
+        scroll_panel = wx.lib.scrolledpanel.ScrolledPanel(self.notebook)
+        scroll_panel.SetupScrolling()
+        self.notebook.AddPage(scroll_panel, "General")
         
         sizer = wx.BoxSizer(wx.VERTICAL)
         
         # UI Preferences group
-        ui_box = wx.StaticBoxSizer(wx.VERTICAL, panel, "User Interface")
+        ui_box = wx.StaticBoxSizer(wx.VERTICAL, scroll_panel, "User Interface")
         ui_panel = ui_box.GetStaticBox()
         
         # Theme selection
@@ -111,7 +113,7 @@ class SettingsDialog(wx.Dialog):
         sizer.Add(ui_box, 0, wx.EXPAND | wx.ALL, 12)
         
         # Auto-refresh group with improved spacing
-        refresh_box = wx.StaticBoxSizer(wx.VERTICAL, panel, "Auto-refresh")
+        refresh_box = wx.StaticBoxSizer(wx.VERTICAL, scroll_panel, "Auto-refresh")
         refresh_panel = refresh_box.GetStaticBox()
         
         self.auto_refresh_cb = wx.CheckBox(refresh_panel, label="Auto-refresh model list")
@@ -125,17 +127,38 @@ class SettingsDialog(wx.Dialog):
         
         sizer.Add(refresh_box, 0, wx.EXPAND | wx.ALL, 12)
         
-        panel.SetSizer(sizer)
+        # Cache management group
+        cache_box = wx.StaticBoxSizer(wx.VERTICAL, scroll_panel, "Cache Management")
+        cache_panel = cache_box.GetStaticBox()
+        
+        # Clear cache button with description
+        cache_text = wx.StaticText(cache_panel,
+            label="Clear all cached data including model information and embeddings cache.\n"
+                  "This will reset all cached data and refresh the application.")
+        cache_text.SetFont(cache_text.GetFont().Smaller())
+        cache_box.Add(cache_text, 0, wx.ALL, 8)
+        
+        self.clear_cache_btn = wx.Button(cache_panel, label="Clear Cache")
+        cache_box.Add(self.clear_cache_btn, 0, wx.ALL, 8)
+        
+        sizer.Add(cache_box, 0, wx.EXPAND | wx.ALL, 12)
+        
+        # Add some extra space at the bottom for scroll comfort
+        sizer.Add(wx.Size(0, 20), 0)
+        
+        scroll_panel.SetSizer(sizer)
     
     def _create_models_page(self) -> None:
         """Create the models settings page."""
-        panel = wx.Panel(self.notebook)
-        self.notebook.AddPage(panel, "Models")
+        # Create a scrolled panel to handle overflow content
+        scroll_panel = wx.lib.scrolledpanel.ScrolledPanel(self.notebook)
+        scroll_panel.SetupScrolling()
+        self.notebook.AddPage(scroll_panel, "Models")
         
         sizer = wx.BoxSizer(wx.VERTICAL)
         
         # Default model selection
-        default_box = wx.StaticBoxSizer(wx.VERTICAL, panel, "Default Model")
+        default_box = wx.StaticBoxSizer(wx.VERTICAL, scroll_panel, "Default Model")
         default_panel = default_box.GetStaticBox()
         
         self.auto_select_cb = wx.CheckBox(default_panel, label="Automatically select default model on startup")
@@ -160,7 +183,7 @@ class SettingsDialog(wx.Dialog):
         sizer.Add(default_box, 0, wx.EXPAND | wx.ALL, 12)
         
         # Model list preferences
-        list_box = wx.StaticBoxSizer(wx.VERTICAL, panel, "Model List")
+        list_box = wx.StaticBoxSizer(wx.VERTICAL, scroll_panel, "Model List")
         list_panel = list_box.GetStaticBox()
         
         sort_sizer = wx.BoxSizer(wx.HORIZONTAL)
@@ -174,17 +197,22 @@ class SettingsDialog(wx.Dialog):
         
         sizer.Add(list_box, 0, wx.EXPAND | wx.ALL, 12)
         
-        panel.SetSizer(sizer)
+        # Add some extra space at the bottom for scroll comfort
+        sizer.Add(wx.Size(0, 20), 0)
+        
+        scroll_panel.SetSizer(sizer)
     
     def _create_embeddings_page(self) -> None:
         """Create the embeddings settings page."""
-        panel = wx.Panel(self.notebook)
-        self.notebook.AddPage(panel, "Embeddings")
+        # Create a scrolled panel to handle overflow content
+        scroll_panel = wx.lib.scrolledpanel.ScrolledPanel(self.notebook)
+        scroll_panel.SetupScrolling()
+        self.notebook.AddPage(scroll_panel, "Embeddings")
         
         sizer = wx.BoxSizer(wx.VERTICAL)
         
         # Default embedding model selection
-        model_box = wx.StaticBoxSizer(wx.VERTICAL, panel, "Embedding Model")
+        model_box = wx.StaticBoxSizer(wx.VERTICAL, scroll_panel, "Embedding Model")
         model_panel = model_box.GetStaticBox()
         
         model_sizer = wx.BoxSizer(wx.HORIZONTAL)
@@ -220,7 +248,7 @@ class SettingsDialog(wx.Dialog):
         sizer.Add(model_box, 0, wx.EXPAND | wx.ALL, 12)
         
         # RAG Settings
-        rag_box = wx.StaticBoxSizer(wx.VERTICAL, panel, "RAG (Retrieval Augmented Generation)")
+        rag_box = wx.StaticBoxSizer(wx.VERTICAL, scroll_panel, "RAG (Retrieval Augmented Generation)")
         rag_panel = rag_box.GetStaticBox()
         
         self.rag_enabled_cb = wx.CheckBox(rag_panel, label="Enable RAG for enhanced chat responses")
@@ -248,7 +276,7 @@ class SettingsDialog(wx.Dialog):
         sizer.Add(rag_box, 0, wx.EXPAND | wx.ALL, 12)
         
         # Document Processing Settings
-        doc_box = wx.StaticBoxSizer(wx.VERTICAL, panel, "Document Processing")
+        doc_box = wx.StaticBoxSizer(wx.VERTICAL, scroll_panel, "Document Processing")
         doc_panel = doc_box.GetStaticBox()
         
         # Chunking settings
@@ -280,7 +308,7 @@ class SettingsDialog(wx.Dialog):
         sizer.Add(doc_box, 0, wx.EXPAND | wx.ALL, 12)
         
         # Storage Settings
-        storage_box = wx.StaticBoxSizer(wx.VERTICAL, panel, "Storage")
+        storage_box = wx.StaticBoxSizer(wx.VERTICAL, scroll_panel, "Storage")
         storage_panel = storage_box.GetStaticBox()
         
         # Persist directory
@@ -296,7 +324,10 @@ class SettingsDialog(wx.Dialog):
         
         sizer.Add(storage_box, 0, wx.EXPAND | wx.ALL, 12)
         
-        panel.SetSizer(sizer)
+        # Add some extra space at the bottom for scroll comfort
+        sizer.Add(wx.Size(0, 20), 0)
+        
+        scroll_panel.SetSizer(sizer)
         
         # Bind events for custom model handling
         self.embedding_model_choice.Bind(wx.EVT_CHOICE, self._on_embedding_model_changed)
@@ -307,13 +338,15 @@ class SettingsDialog(wx.Dialog):
     
     def _create_server_page(self) -> None:
         """Create the server settings page."""
-        panel = wx.Panel(self.notebook)
-        self.notebook.AddPage(panel, "Server")
+        # Create a scrolled panel to handle overflow content
+        scroll_panel = wx.lib.scrolledpanel.ScrolledPanel(self.notebook)
+        scroll_panel.SetupScrolling()
+        self.notebook.AddPage(scroll_panel, "Server")
         
         sizer = wx.BoxSizer(wx.VERTICAL)
         
         # Ollama server configuration
-        server_box = wx.StaticBoxSizer(wx.VERTICAL, panel, "Ollama Server Connection")
+        server_box = wx.StaticBoxSizer(wx.VERTICAL, scroll_panel, "Ollama Server Connection")
         server_panel = server_box.GetStaticBox()
         
         # Server connection settings
@@ -344,7 +377,10 @@ class SettingsDialog(wx.Dialog):
         
         sizer.Add(server_box, 0, wx.EXPAND | wx.ALL, 12)
         
-        panel.SetSizer(sizer)
+        # Add some extra space at the bottom for scroll comfort
+        sizer.Add(wx.Size(0, 20), 0)
+        
+        scroll_panel.SetSizer(sizer)
     
     def _create_chat_page(self) -> None:
         """Create the chat settings page."""
@@ -435,6 +471,7 @@ class SettingsDialog(wx.Dialog):
         """Set up event bindings."""
         self.Bind(wx.EVT_BUTTON, self._on_ok, id=wx.ID_OK)
         self.Bind(wx.EVT_BUTTON, self._on_cancel, id=wx.ID_CANCEL)
+        self.clear_cache_btn.Bind(wx.EVT_BUTTON, self._on_clear_cache)
     
     def _load_values(self) -> None:
         """Load current configuration values into the UI."""
@@ -621,6 +658,43 @@ class SettingsDialog(wx.Dialog):
             
         except Exception as e:
             wx.MessageBox(f"Connection failed: {e}", "Test Connection", wx.OK | wx.ICON_ERROR)
+    
+    def _on_clear_cache(self, event: wx.CommandEvent) -> None:
+        """Handle Clear Cache button click."""
+        try:
+            # Show confirmation dialog
+            result = wx.MessageBox(
+                "This will clear all cached data including model information and embeddings cache.\n\n"
+                "Are you sure you want to continue?",
+                "Clear Cache Confirmation",
+                wx.YES_NO | wx.ICON_QUESTION
+            )
+            
+            if result == wx.YES:
+                # Get the cache manager from parent window (MainWindow)
+                parent_window = self.GetParent()
+                if (hasattr(parent_window, 'backend_manager') and 
+                    parent_window.backend_manager and
+                    hasattr(parent_window.backend_manager, 'cache_manager')):
+                    
+                    cache_manager = parent_window.backend_manager.cache_manager
+                    if cache_manager:
+                        cache_manager.reset_cache()
+                        
+                        wx.MessageBox(
+                            "Cache cleared successfully!\n"
+                            "Changes will take effect when you restart or refresh the application.",
+                            "Cache Cleared",
+                            wx.OK | wx.ICON_INFORMATION
+                        )
+                    else:
+                        wx.MessageBox("Cache manager not available", "Error", wx.OK | wx.ICON_ERROR)
+                else:
+                    wx.MessageBox("Unable to access cache manager", "Error", wx.OK | wx.ICON_ERROR)
+                    
+        except Exception as e:
+            logger.error(f"Error clearing cache: {e}")
+            wx.MessageBox(f"Error clearing cache: {str(e)}", "Error", wx.OK | wx.ICON_ERROR)
     
     def _on_ok(self, event: wx.CommandEvent) -> None:
         """Handle OK button click."""

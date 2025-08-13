@@ -10,6 +10,7 @@ This module contains the ModelsTab class which handles all model management func
 """
 
 import wx
+import wx.lib.scrolledpanel
 import threading
 from typing import Optional, List
 from logging import getLogger
@@ -20,7 +21,7 @@ from llamalot.gui.dialogs.create_model_dialog import CreateModelDialog
 logger = getLogger(__name__)
 
 
-class ModelsTab(wx.Panel):
+class ModelsTab(wx.lib.scrolledpanel.ScrolledPanel):
     """Models tab component for managing Ollama models."""
     
     def __init__(self, parent: wx.Window, main_window):
@@ -31,6 +32,7 @@ class ModelsTab(wx.Panel):
             main_window: Reference to the main window for access to managers and functionality
         """
         super().__init__(parent)
+        self.SetupScrolling()
         self.main_window = main_window
         
         # Model state
