@@ -120,8 +120,8 @@ class ModelsTab(wx.lib.scrolledpanel.ScrolledPanel):
         """Create the model details and management panel for the models tab."""
         main_sizer = wx.BoxSizer(wx.VERTICAL)
         
-        # Top section with management and chat actions side by side
-        top_section_sizer = wx.BoxSizer(wx.HORIZONTAL)
+        # Top section with management and chat actions stacked vertically for better spacing
+        top_section_sizer = wx.BoxSizer(wx.VERTICAL)
         
         # Left column - Model Management
         left_mgmt_sizer = wx.BoxSizer(wx.VERTICAL)
@@ -130,19 +130,28 @@ class ModelsTab(wx.lib.scrolledpanel.ScrolledPanel):
         
         # Model actions buttons (horizontal layout)
         action_sizer = wx.BoxSizer(wx.HORIZONTAL)
-        self.models_pull_btn = wx.Button(self.models_right_panel, label="Pull Model", size=wx.Size(100, 30))
-        self.models_create_btn = wx.Button(self.models_right_panel, label="Create Model", size=wx.Size(100, 30))
-        self.models_delete_btn = wx.Button(self.models_right_panel, label="Delete Model", size=wx.Size(100, 30))
+        self.models_pull_btn = wx.Button(self.models_right_panel, label="Pull", size=wx.Size(80, 30))
+        self.models_create_btn = wx.Button(self.models_right_panel, label="Create", size=wx.Size(80, 30))
+        self.models_delete_btn = wx.Button(self.models_right_panel, label="Delete", size=wx.Size(80, 30))
+        self.models_stop_btn = wx.Button(self.models_right_panel, label="Stop", size=wx.Size(80, 30))
+        
+        # Set tooltips to clarify the shortened labels
+        self.models_pull_btn.SetToolTip("Pull a new model from the registry")
+        self.models_create_btn.SetToolTip("Create a custom model from a Modelfile")
+        self.models_delete_btn.SetToolTip("Delete the selected model")
+        self.models_stop_btn.SetToolTip("Stop/unload the selected model from memory")
         
         # Initially disable action buttons until a model is selected
         self.models_delete_btn.Enable(False)
+        self.models_stop_btn.Enable(False)
         
         action_sizer.Add(self.models_pull_btn, 0, wx.RIGHT, 5)
         action_sizer.Add(self.models_create_btn, 0, wx.RIGHT, 5)
-        action_sizer.Add(self.models_delete_btn, 0)
+        action_sizer.Add(self.models_delete_btn, 0, wx.RIGHT, 5)
+        action_sizer.Add(self.models_stop_btn, 0)
         
         left_mgmt_sizer.Add(mgmt_label, 0, wx.BOTTOM | wx.ALIGN_CENTER_HORIZONTAL, 8)
-        left_mgmt_sizer.Add(action_sizer, 0, wx.EXPAND)
+        left_mgmt_sizer.Add(action_sizer, 0, wx.ALIGN_CENTER_HORIZONTAL)
         
         # Right column - Chat Actions
         right_chat_sizer = wx.BoxSizer(wx.VERTICAL)
@@ -157,11 +166,11 @@ class ModelsTab(wx.lib.scrolledpanel.ScrolledPanel):
         chat_action_sizer.Add(self.models_new_chat_btn, 0, wx.EXPAND)
         
         right_chat_sizer.Add(chat_label, 0, wx.BOTTOM | wx.ALIGN_CENTER_HORIZONTAL, 8)
-        right_chat_sizer.Add(chat_action_sizer, 0, wx.EXPAND)
+        right_chat_sizer.Add(chat_action_sizer, 0, wx.ALIGN_CENTER_HORIZONTAL)
         
-        # Add both columns to top section with equal spacing
-        top_section_sizer.Add(left_mgmt_sizer, 1, wx.EXPAND | wx.RIGHT, 20)
-        top_section_sizer.Add(right_chat_sizer, 1, wx.EXPAND)
+        # Add sections vertically - management section first, then chat actions
+        top_section_sizer.Add(left_mgmt_sizer, 0, wx.EXPAND | wx.BOTTOM, 20)
+        top_section_sizer.Add(right_chat_sizer, 0, wx.EXPAND)
         
         # Model details section with tabs (full width)
         info_label = wx.StaticText(self.models_right_panel, label="Model Information")
@@ -211,6 +220,7 @@ class ModelsTab(wx.lib.scrolledpanel.ScrolledPanel):
         self.Bind(wx.EVT_BUTTON, self.on_pull_model, self.models_pull_btn)
         self.Bind(wx.EVT_BUTTON, self.on_create_model, self.models_create_btn)
         self.Bind(wx.EVT_BUTTON, self.on_delete_model, self.models_delete_btn)
+        self.Bind(wx.EVT_BUTTON, self.on_stop_model, self.models_stop_btn)
         self.Bind(wx.EVT_BUTTON, self.on_models_new_chat, self.models_new_chat_btn)
         
         # List events
@@ -393,6 +403,7 @@ class ModelsTab(wx.lib.scrolledpanel.ScrolledPanel):
             
             # Enable action buttons
             self.models_delete_btn.Enable(True)
+            self.models_stop_btn.Enable(True)
             self.models_new_chat_btn.Enable(True)  # Enable new chat button
             
             # Update status bar to show highlighted model
@@ -405,6 +416,7 @@ class ModelsTab(wx.lib.scrolledpanel.ScrolledPanel):
         else:
             self.highlighted_model = None
             self.models_delete_btn.Enable(False)
+            self.models_stop_btn.Enable(False)
             self.models_new_chat_btn.Enable(False)  # Disable new chat button
     
     def on_column_click(self, event: wx.ListEvent) -> None:
@@ -749,6 +761,80 @@ class ModelsTab(wx.lib.scrolledpanel.ScrolledPanel):
         except Exception as e:
             logger.error(f"Error starting new chat via double-click: {e}")
             wx.MessageBox(f"Error starting new chat: {e}", "Error", wx.OK | wx.ICON_ERROR)
+    
+    def on_stop_model(self, event: wx.CommandEvent) -> None:
+        """Handle stop/unload model button."""
+        if not self.highlighted_model:
+            wx.MessageBox("Please select a model to stop.", "No Model Selected", wx.OK | wx.ICON_WARNING)
+            return
+        
+        # Check if the model is actually running first
+        try:
+            running_models = self.main_window.ollama_client.get_running_models()
+            if self.highlighted_model.name not in running_models:
+                wx.MessageBox(
+                    f"Model '{self.highlighted_model.name}' is not currently running.", 
+                    "Model Not Running", 
+                    wx.OK | wx.ICON_INFORMATION
+                )
+                return
+        except Exception as e:
+            logger.warning(f"Could not check running models: {e}")
+            # Continue anyway since get_running_models might fail but unload might still work
+        
+        # Confirm unloading
+        msg = f"Stop (unload) model '{self.highlighted_model.name}' from memory?\n\nThis will free up system resources but the model can be started again when needed."
+        result = wx.MessageBox(msg, "Confirm Stop Model", wx.YES_NO | wx.ICON_QUESTION)
+        
+        if result == wx.YES:
+            self._stop_model_async(self.highlighted_model.name)
+    
+    def _stop_model_async(self, model_name: str) -> None:
+        """Stop/unload model asynchronously."""
+        # Disable stop button during operation
+        self.models_stop_btn.Enable(False)
+        self.main_window.status_bar.SetStatusText(f"Stopping model {model_name}...", 0)
+        
+        def stop_worker():
+            """Worker thread to stop the model."""
+            try:
+                success = self.main_window.ollama_client.unload_model(model_name)
+                wx.CallAfter(self._on_stop_complete, model_name, success, None)
+                
+            except Exception as e:
+                wx.CallAfter(self._on_stop_complete, model_name, False, str(e))
+        
+        # Start stopping in background
+        stop_thread = threading.Thread(target=stop_worker, daemon=True)
+        stop_thread.start()
+    
+    def _on_stop_complete(self, model_name: str, success: bool, error: Optional[str]) -> None:
+        """Handle model stop completion."""
+        # Re-enable stop button
+        self.models_stop_btn.Enable(True)
+        
+        if success:
+            self.main_window.status_bar.SetStatusText("Ready", 0)
+            logger.info(f"Successfully stopped model: {model_name}")
+            
+            wx.MessageBox(
+                f"Model '{model_name}' has been stopped and unloaded from memory.", 
+                "Model Stopped", 
+                wx.OK | wx.ICON_INFORMATION
+            )
+            
+            # Refresh the model list to update running status
+            wx.CallAfter(self._load_models_async)
+            
+        else:
+            error_msg = error or "Unknown error occurred"
+            self.main_window.status_bar.SetStatusText("Error stopping model", 0)
+            logger.error(f"Failed to stop model {model_name}: {error_msg}")
+            wx.MessageBox(
+                f"Failed to stop model '{model_name}':\n{error_msg}", 
+                "Stop Error", 
+                wx.OK | wx.ICON_ERROR
+            )
     
     def _select_default_model(self) -> None:
         """Select the configured default model if available."""

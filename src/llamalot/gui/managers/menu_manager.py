@@ -52,6 +52,7 @@ class MenuManager:
         file_menu.Append(wx.ID_ANY, "Pull Model...", "Download a new model")
         file_menu.Append(wx.ID_ANY, "Create Model...\tCtrl+Shift+N", "Create a custom model")
         file_menu.Append(wx.ID_ANY, "Delete Model...", "Delete selected model")
+        file_menu.Append(wx.ID_ANY, "Stop Model...", "Stop/unload selected model from memory")
         
         file_menu.AppendSeparator()
         
