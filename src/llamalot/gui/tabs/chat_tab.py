@@ -48,6 +48,9 @@ class ChatTab(wx.lib.scrolledpanel.ScrolledPanel):
         self._create_chat_ui()
         self._bind_events()
         
+        # Populate model choices after UI creation
+        wx.CallAfter(self.populate_model_choices)
+        
         logger.info("Chat tab created successfully")
     
     def _create_chat_ui(self) -> None:
@@ -57,10 +60,11 @@ class ChatTab(wx.lib.scrolledpanel.ScrolledPanel):
         
         # Top row with Chat title and New Chat button
         title_row_sizer = wx.BoxSizer(wx.HORIZONTAL)
-        self.current_model_label = wx.StaticText(self, label="Chat")
-        self.current_model_label.SetFont(wx.Font(14, wx.FONTFAMILY_DEFAULT, wx.FONTSTYLE_NORMAL, wx.FONTWEIGHT_BOLD))
-        # Ensure the label has enough space for the font
-        self.current_model_label.SetMinSize(wx.Size(60, 25))
+        
+        # Chat title
+        chat_title = wx.StaticText(self, label="Chat")
+        chat_title.SetFont(wx.Font(14, wx.FONTFAMILY_DEFAULT, wx.FONTSTYLE_NORMAL, wx.FONTWEIGHT_BOLD))
+        title_row_sizer.Add(chat_title, 0, wx.ALIGN_CENTER_VERTICAL | wx.RIGHT, 10)
         
         self.new_chat_btn = wx.Button(self, label="New Chat", size=wx.Size(80, 25))
         self.new_chat_btn.SetToolTip("Start a new conversation with the current model")
@@ -69,17 +73,30 @@ class ChatTab(wx.lib.scrolledpanel.ScrolledPanel):
         self.markdown_toggle_btn = wx.Button(self, label="Raw Text", size=wx.Size(80, 25))
         self.markdown_toggle_btn.SetToolTip("Switch to raw text mode")
         
-        title_row_sizer.Add(self.current_model_label, 0, wx.ALIGN_CENTER_VERTICAL | wx.RIGHT, 10)
         title_row_sizer.AddStretchSpacer(1)  # Push the buttons to the right
         title_row_sizer.Add(self.markdown_toggle_btn, 0, wx.ALIGN_CENTER_VERTICAL | wx.RIGHT, 5)
         title_row_sizer.Add(self.new_chat_btn, 0, wx.ALIGN_CENTER_VERTICAL)
         
-        # Second row with model information
-        self.selected_model_text = wx.StaticText(self, label="No model selected")
-        self.selected_model_text.SetFont(wx.Font(10, wx.FONTFAMILY_DEFAULT, wx.FONTSTYLE_ITALIC, wx.FONTWEIGHT_NORMAL))
+        # Second row with model selection dropdown and capabilities
+        model_row_sizer = wx.BoxSizer(wx.HORIZONTAL)
+        
+        # Model selection label and dropdown
+        model_label = wx.StaticText(self, label="Model:")
+        model_label.SetFont(wx.Font(10, wx.FONTFAMILY_DEFAULT, wx.FONTSTYLE_NORMAL, wx.FONTWEIGHT_NORMAL))
+        model_row_sizer.Add(model_label, 0, wx.ALIGN_CENTER_VERTICAL | wx.RIGHT, 5)
+        
+        # Model dropdown
+        self.model_choice = wx.ComboBox(self, style=wx.CB_READONLY, size=wx.Size(250, -1))
+        self.model_choice.SetToolTip("Select a model for chat. Models must be available in Ollama.")
+        model_row_sizer.Add(self.model_choice, 0, wx.ALIGN_CENTER_VERTICAL | wx.RIGHT, 10)
+        
+        # Model capabilities display
+        self.model_capabilities_text = wx.StaticText(self, label="")
+        self.model_capabilities_text.SetFont(wx.Font(9, wx.FONTFAMILY_DEFAULT, wx.FONTSTYLE_ITALIC, wx.FONTWEIGHT_NORMAL))
+        model_row_sizer.Add(self.model_capabilities_text, 1, wx.ALIGN_CENTER_VERTICAL)
         
         header_sizer.Add(title_row_sizer, 0, wx.EXPAND | wx.BOTTOM, 8)
-        header_sizer.Add(self.selected_model_text, 0, wx.ALIGN_LEFT)
+        header_sizer.Add(model_row_sizer, 0, wx.EXPAND)
         
         # Chat output display
         self.chat_output = wx.TextCtrl(
@@ -148,6 +165,7 @@ class ChatTab(wx.lib.scrolledpanel.ScrolledPanel):
         self.Bind(wx.EVT_BUTTON, self.on_new_chat, self.new_chat_btn)
         self.Bind(wx.EVT_BUTTON, self.on_toggle_markdown, self.markdown_toggle_btn)
         self.Bind(wx.EVT_TEXT_ENTER, self.on_chat_input_enter, self.chat_input)
+        self.Bind(wx.EVT_COMBOBOX, self.on_model_selection_changed, self.model_choice)
     
     def _on_images_changed(self, images: List[ChatImage]) -> None:
         """Callback when images are updated in the attachment panel."""
@@ -194,16 +212,118 @@ class ChatTab(wx.lib.scrolledpanel.ScrolledPanel):
         self.Layout()
         logger.info(f"Current chat model set to: {model.name if model else 'None'}")
     
+    def refresh_model_list(self) -> None:
+        """Refresh the model dropdown with current available models."""
+        self.populate_model_choices()
+    
     def _update_chat_model_display(self) -> None:
         """Update the chat tab to show the currently selected model."""
         if self.current_model:
-            model_text = f"Current model: {self.current_model.name}"
+            # Update the dropdown selection (but don't trigger events)
+            self._update_model_choice_selection()
+            
+            # Update capabilities display
+            capabilities = []
             if 'vision' in self.current_model.capabilities:
-                model_text += " (Vision)"
+                capabilities.append("Vision")
+            if 'embedding' in self.current_model.capabilities:
+                capabilities.append("Embeddings")
+            if 'code' in self.current_model.capabilities:
+                capabilities.append("Code")
+            
+            if capabilities:
+                cap_text = f"Capabilities: {', '.join(capabilities)}"
+            else:
+                cap_text = ""
+            
+            self.model_capabilities_text.SetLabel(cap_text)
         else:
-            model_text = "No model selected"
+            # Clear selection and capabilities
+            self.model_choice.SetSelection(wx.NOT_FOUND)
+            self.model_capabilities_text.SetLabel("No model selected")
         
-        self.selected_model_text.SetLabel(model_text)
+        # Refresh layout to accommodate text changes
+        self.Layout()
+    
+    def _update_model_choice_selection(self) -> None:
+        """Update the model choice dropdown to show the current model selection."""
+        if not self.current_model:
+            self.model_choice.SetSelection(wx.NOT_FOUND)
+            return
+        
+        # Find the current model in the dropdown
+        for i in range(self.model_choice.GetCount()):
+            if self.model_choice.GetString(i) == self.current_model.name:
+                self.model_choice.SetSelection(i)
+                return
+        
+        # Model not found in dropdown - this might happen if models list needs refreshing
+        self.model_choice.SetSelection(wx.NOT_FOUND)
+        logger.warning(f"Current model '{self.current_model.name}' not found in dropdown")
+    
+    def populate_model_choices(self) -> None:
+        """Populate the model choice dropdown with available models."""
+        try:
+            # Get available models from main window
+            if hasattr(self.main_window, 'cache_manager') and self.main_window.cache_manager:
+                models = self.main_window.cache_manager.get_models()
+                
+                # Clear existing choices
+                self.model_choice.Clear()
+                
+                if models:
+                    # Add model names to dropdown
+                    model_names = [model.name for model in models]
+                    self.model_choice.AppendItems(model_names)
+                    
+                    # Update selection to show current model
+                    self._update_model_choice_selection()
+                    
+                    logger.info(f"Populated model dropdown with {len(models)} models")
+                else:
+                    logger.info("No models available for dropdown")
+            else:
+                logger.warning("Cache manager not available for populating model choices")
+                
+        except Exception as e:
+            logger.error(f"Error populating model choices: {e}")
+    
+    def on_model_selection_changed(self, event: wx.CommandEvent) -> None:
+        """Handle model selection change in dropdown."""
+        try:
+            selection = self.model_choice.GetSelection()
+            if selection == wx.NOT_FOUND:
+                return
+            
+            selected_model_name = self.model_choice.GetString(selection)
+            
+            # Find the model object
+            if hasattr(self.main_window, 'cache_manager') and self.main_window.cache_manager:
+                models = self.main_window.cache_manager.get_models()
+                selected_model = None
+                
+                for model in models:
+                    if model.name == selected_model_name:
+                        selected_model = model
+                        break
+                
+                if selected_model:
+                    # Update the main window's current model
+                    self.main_window.current_model = selected_model
+                    
+                    # Update this tab's model
+                    self.set_current_model(selected_model)
+                    
+                    # Update main window status
+                    self.main_window.status_bar.SetStatusText(f"Model changed to: {selected_model.name}", 0)
+                    
+                    logger.info(f"Model changed to: {selected_model.name}")
+                else:
+                    logger.error(f"Selected model '{selected_model_name}' not found in available models")
+            
+        except Exception as e:
+            logger.error(f"Error handling model selection change: {e}")
+            wx.MessageBox(f"Error changing model: {e}", "Error", wx.OK | wx.ICON_ERROR)
     
     def start_new_conversation(self) -> None:
         """Start a new conversation with the current model."""

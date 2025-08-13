@@ -758,6 +758,10 @@ class MainWindow(wx.Frame):
             if hasattr(self, 'models_tab'):
                 self.models_tab.refresh_models()
             
+            # Update chat tab model dropdown
+            if hasattr(self, 'chat_tab'):
+                self.chat_tab.refresh_model_list()
+            
             self.status_bar.SetStatusText("Ready", 0)
             
             logger.info("Manual refresh completed successfully")
