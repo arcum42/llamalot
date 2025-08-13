@@ -44,7 +44,9 @@ class CacheManager:
         
         # Cache configuration
         self.model_cache_ttl = timedelta(hours=1)  # Model list cache TTL
+        self.min_refresh_interval = timedelta(seconds=30)  # Minimum time between refreshes to prevent spam
         self.auto_sync = True  # Automatically sync with Ollama
+        self._last_refresh_attempt = None  # Track last refresh attempt
         
         logger.info("Cache manager initialized")
     
@@ -69,6 +71,9 @@ class CacheManager:
         
         if should_refresh and self.ollama:
             try:
+                # Track refresh attempt to prevent spam
+                self._last_refresh_attempt = datetime.now()
+                
                 logger.info("Refreshing models from Ollama server")
                 
                 if force_refresh:
@@ -96,27 +101,31 @@ class CacheManager:
                     cached_models = {model.name: model for model in self.db.list_models()}
                     
                     updated_models = []
+                    models_needing_details = []
+                    
                     for server_model in server_models:
                         cached_model = cached_models.get(server_model.name)
                         
                         # Check if we need to fetch detailed info
+                        # Be more conservative about when to fetch - only for new models or digest changes
                         needs_details = (
                             not cached_model or  # Not in cache
-                            not cached_model.capabilities or  # No capabilities cached
-                            not cached_model.model_info or  # No model info cached
                             cached_model.digest != server_model.digest  # Different version
                         )
                         
                         if needs_details:
-                            try:
-                                logger.debug(f"Fetching detailed info for model: {server_model.name}")
-                                # Get detailed model info including capabilities
-                                detailed_model = self.ollama.get_model_info(server_model.name)
-                                updated_models.append(detailed_model)
-                            except Exception as e:
-                                logger.warning(f"Failed to get detailed info for {server_model.name}: {e}")
-                                # Use the cached model or fallback to server model
-                                updated_models.append(cached_model if cached_model else server_model)
+                            # Add to list for batch processing, but don't fetch yet
+                            models_needing_details.append(server_model.name)
+                            # For now, use the basic server model or cached model
+                            if cached_model:
+                                # Update basic info but keep cached details
+                                cached_model.size = server_model.size
+                                cached_model.digest = server_model.digest
+                                cached_model.modified_at = server_model.modified_at
+                                updated_models.append(cached_model)
+                            else:
+                                # New model - add basic info, details will be fetched on-demand
+                                updated_models.append(server_model)
                         else:
                             # Use cached model with updated basic info from server
                             if cached_model:
@@ -127,6 +136,11 @@ class CacheManager:
                             else:
                                 # Shouldn't happen, but add server model as fallback
                                 updated_models.append(server_model)
+                    
+                    # Log what we're deferring
+                    if models_needing_details:
+                        logger.info(f"Deferring detailed fetch for {len(models_needing_details)} models: {models_needing_details[:5]}{'...' if len(models_needing_details) > 5 else ''}")
+                        # Note: Detailed info will be fetched on-demand via get_model() when needed
                     
                     # Update cache with all models
                     for model in updated_models:
@@ -164,12 +178,13 @@ class CacheManager:
         # If not in cache or details missing, try to fetch from server
         if (not model or (fetch_details and not model.model_info)) and self.ollama:
             try:
-                # Get basic model info
+                # Get basic model info if we don't have it at all
                 if not model:
-                    server_models = self.ollama.list_models()
+                    # First try basic list to avoid expensive calls
+                    server_models = self.ollama.list_models_basic()
                     model = next((m for m in server_models if m.name == name), None)
                 
-                # Get detailed model info if requested
+                # Get detailed model info if requested and missing
                 if model and fetch_details and not model.model_info:
                     logger.debug(f"Fetching detailed info for model: {name}")
                     detailed_model = self.ollama.get_model_info(name)
@@ -236,13 +251,22 @@ class CacheManager:
         if not self.auto_sync:
             return False
         
+        # Check minimum refresh interval to prevent spam during startup
+        if self._last_refresh_attempt:
+            time_since_last = datetime.now() - self._last_refresh_attempt
+            if time_since_last < self.min_refresh_interval:
+                logger.debug(f"Skipping refresh - too soon since last attempt ({time_since_last.total_seconds():.1f}s ago)")
+                return False
+        
         last_refresh = self.db.get_app_state('last_model_refresh')
         if not last_refresh:
             return True
         
         try:
             last_refresh_time = datetime.fromisoformat(last_refresh)
-            return datetime.now() - last_refresh_time > self.model_cache_ttl
+            should_refresh = datetime.now() - last_refresh_time > self.model_cache_ttl
+            logger.debug(f"Cache age: {datetime.now() - last_refresh_time}, TTL: {self.model_cache_ttl}, should_refresh: {should_refresh}")
+            return should_refresh
         except (ValueError, TypeError):
             return True
     

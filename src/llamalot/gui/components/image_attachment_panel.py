@@ -84,7 +84,7 @@ class ImageAttachmentPanel(wx.Panel):
         attach_controls_sizer = wx.BoxSizer(wx.HORIZONTAL)
         
         self.attach_btn = wx.Button(self.image_panel, label="📎 Attach Images", size=wx.Size(120, 25))
-        self.delete_selected_btn = wx.Button(self.image_panel, label="🗑️ Delete Selected", size=wx.Size(100, 25))
+        self.delete_selected_btn = wx.Button(self.image_panel, label="🗑️ Delete Selected", size=wx.Size(130, 25))
         self.clear_images_btn = wx.Button(self.image_panel, label="🗑️ Clear All", size=wx.Size(80, 25))
         
         # Initially disable delete selected button

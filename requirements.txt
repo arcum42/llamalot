@@ -7,6 +7,12 @@ ollama>=0.5.3
 # Vector database for embeddings
 chromadb>=0.4.24
 
+# Document processing for embeddings
+PyPDF2>=3.0.0          # PDF text extraction
+beautifulsoup4>=4.12.0  # HTML parsing for URL content
+markdown>=3.5.0         # Markdown processing
+textstat>=0.7.3         # Text analysis and statistics
+
 # Database
 #sqlite3  # Built into Python, but listed for clarity
 

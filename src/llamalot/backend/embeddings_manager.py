@@ -56,19 +56,32 @@ class EmbeddingsManager:
             config_manager: Configuration manager instance
         """
         self.config_manager = config_manager
+        self.config = config_manager.config
         self.client = None
         self.collections = {}
-        self._default_embedding_model = "mxbai-embed-large"
         
         # Initialize ChromaDB
         self._initialize_chromadb()
     
+    @property
+    def default_embedding_model(self) -> str:
+        """Get the default embedding model from configuration."""
+        return self.config.embeddings.default_model
+    
+    @property 
+    def persist_directory(self) -> Path:
+        """Get the embeddings persist directory from configuration."""
+        persist_dir = self.config.embeddings.persist_directory
+        if persist_dir is None:
+            # Fallback to default if not set
+            persist_dir = str(Path.home() / ".llamalot" / "embeddings")
+        return Path(persist_dir)
+    
     def _initialize_chromadb(self):
         """Initialize ChromaDB client with persistent storage."""
         try:
-            # Create embeddings directory in user data folder
-            data_dir = Path.home() / ".llamalot"
-            embeddings_dir = data_dir / "embeddings"
+            # Get embeddings directory from configuration
+            embeddings_dir = self.persist_directory
             embeddings_dir.mkdir(parents=True, exist_ok=True)
             
             # Initialize ChromaDB client with persistent storage
@@ -244,7 +257,7 @@ class EmbeddingsManager:
             if not text.strip():
                 raise EmbeddingsError("Cannot generate embedding for empty text")
             
-            embedding_model = model or self._default_embedding_model
+            embedding_model = model or self.default_embedding_model
             
             response = ollama.embed(
                 model=embedding_model,
@@ -468,7 +481,8 @@ class EmbeddingsManager:
         Args:
             model: New default embedding model name
         """
-        self._default_embedding_model = model
+        self.config.embeddings.default_model = model
+        self.config_manager.save()
         logger.info(f"Updated default embedding model to '{model}'")
     
     def get_default_model(self) -> str:
@@ -478,7 +492,7 @@ class EmbeddingsManager:
         Returns:
             Default embedding model name
         """
-        return self._default_embedding_model
+        return self.default_embedding_model
     
     def clear_collection(self, collection_name: str) -> bool:
         """

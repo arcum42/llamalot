@@ -9,7 +9,7 @@ import wx.lib.scrolledpanel
 from typing import List, Optional, Dict, Any
 from pathlib import Path
 
-from llamalot.models.config import ApplicationConfig, OllamaServerConfig, UIPreferences, ChatDefaults
+from llamalot.models.config import ApplicationConfig, OllamaServerConfig, UIPreferences, ChatDefaults, EmbeddingsConfig
 from llamalot.utils.logging_config import get_logger
 
 logger = get_logger(__name__)
@@ -54,6 +54,7 @@ class SettingsDialog(wx.Dialog):
         # Create pages
         self._create_general_page()
         self._create_models_page()
+        self._create_embeddings_page()
         self._create_server_page()
         self._create_chat_page()
         
@@ -174,6 +175,135 @@ class SettingsDialog(wx.Dialog):
         sizer.Add(list_box, 0, wx.EXPAND | wx.ALL, 12)
         
         panel.SetSizer(sizer)
+    
+    def _create_embeddings_page(self) -> None:
+        """Create the embeddings settings page."""
+        panel = wx.Panel(self.notebook)
+        self.notebook.AddPage(panel, "Embeddings")
+        
+        sizer = wx.BoxSizer(wx.VERTICAL)
+        
+        # Default embedding model selection
+        model_box = wx.StaticBoxSizer(wx.VERTICAL, panel, "Embedding Model")
+        model_panel = model_box.GetStaticBox()
+        
+        model_sizer = wx.BoxSizer(wx.HORIZONTAL)
+        model_sizer.Add(wx.StaticText(model_panel, label="Default embedding model:"), 0, wx.ALIGN_CENTER_VERTICAL | wx.RIGHT, 10)
+        
+        # Get available embedding models
+        embedding_models = [
+            "nomic-embed-text",
+            "mxbai-embed-large", 
+            "snowflake-arctic-embed",
+            "all-minilm",
+            "custom"
+        ]
+        self.embedding_model_choice = wx.Choice(model_panel, choices=embedding_models)
+        model_sizer.Add(self.embedding_model_choice, 1, wx.EXPAND)
+        model_box.Add(model_sizer, 0, wx.EXPAND | wx.ALL, 8)
+        
+        # Custom model entry (initially hidden)
+        self.custom_model_sizer = wx.BoxSizer(wx.HORIZONTAL)
+        self.custom_model_label = wx.StaticText(model_panel, label="Custom model name:")
+        self.custom_model_sizer.Add(self.custom_model_label, 0, wx.ALIGN_CENTER_VERTICAL | wx.RIGHT, 10)
+        self.custom_embedding_model = wx.TextCtrl(model_panel)
+        self.custom_model_sizer.Add(self.custom_embedding_model, 1, wx.EXPAND)
+        model_box.Add(self.custom_model_sizer, 0, wx.EXPAND | wx.ALL, 8)
+        
+        # Help text for embedding models
+        help_text = wx.StaticText(model_panel,
+            label="Select the embedding model used for document vectorization.\n"
+                  "Popular choices: nomic-embed-text (balanced), mxbai-embed-large (high quality)")
+        help_text.SetFont(help_text.GetFont().Smaller())
+        model_box.Add(help_text, 0, wx.ALL, 8)
+        
+        sizer.Add(model_box, 0, wx.EXPAND | wx.ALL, 12)
+        
+        # RAG Settings
+        rag_box = wx.StaticBoxSizer(wx.VERTICAL, panel, "RAG (Retrieval Augmented Generation)")
+        rag_panel = rag_box.GetStaticBox()
+        
+        self.rag_enabled_cb = wx.CheckBox(rag_panel, label="Enable RAG for enhanced chat responses")
+        rag_box.Add(self.rag_enabled_cb, 0, wx.ALL, 8)
+        
+        # Search settings
+        search_grid = wx.FlexGridSizer(3, 2, 8, 10)
+        search_grid.AddGrowableCol(1)
+        
+        search_grid.Add(wx.StaticText(rag_panel, label="Search results limit:"), 0, wx.ALIGN_CENTER_VERTICAL)
+        self.search_limit_spin = wx.SpinCtrl(rag_panel, min=1, max=20, initial=5)
+        search_grid.Add(self.search_limit_spin, 1, wx.EXPAND)
+        
+        search_grid.Add(wx.StaticText(rag_panel, label="Similarity threshold:"), 0, wx.ALIGN_CENTER_VERTICAL)
+        self.similarity_threshold_spin = wx.SpinCtrlDouble(rag_panel, min=0.0, max=1.0, initial=0.7, inc=0.1)
+        self.similarity_threshold_spin.SetDigits(2)
+        search_grid.Add(self.similarity_threshold_spin, 1, wx.EXPAND)
+        
+        search_grid.Add(wx.StaticText(rag_panel, label="Default collection:"), 0, wx.ALIGN_CENTER_VERTICAL)
+        self.default_collection_text = wx.TextCtrl(rag_panel, value="documents")
+        search_grid.Add(self.default_collection_text, 1, wx.EXPAND)
+        
+        rag_box.Add(search_grid, 0, wx.EXPAND | wx.ALL, 8)
+        
+        sizer.Add(rag_box, 0, wx.EXPAND | wx.ALL, 12)
+        
+        # Document Processing Settings
+        doc_box = wx.StaticBoxSizer(wx.VERTICAL, panel, "Document Processing")
+        doc_panel = doc_box.GetStaticBox()
+        
+        # Chunking settings
+        chunk_grid = wx.FlexGridSizer(3, 2, 8, 10)
+        chunk_grid.AddGrowableCol(1)
+        
+        chunk_grid.Add(wx.StaticText(doc_panel, label="Chunk size (characters):"), 0, wx.ALIGN_CENTER_VERTICAL)
+        self.chunk_size_spin = wx.SpinCtrl(doc_panel, min=100, max=10000, initial=2000)
+        chunk_grid.Add(self.chunk_size_spin, 1, wx.EXPAND)
+        
+        chunk_grid.Add(wx.StaticText(doc_panel, label="Chunk overlap (characters):"), 0, wx.ALIGN_CENTER_VERTICAL)
+        self.chunk_overlap_spin = wx.SpinCtrl(doc_panel, min=0, max=1000, initial=200)
+        chunk_grid.Add(self.chunk_overlap_spin, 1, wx.EXPAND)
+        
+        chunk_grid.Add(wx.StaticText(doc_panel, label=""), 0)  # Empty cell
+        self.auto_create_collections_cb = wx.CheckBox(doc_panel, label="Auto-create collections")
+        chunk_grid.Add(self.auto_create_collections_cb, 0, wx.EXPAND)
+        
+        doc_box.Add(chunk_grid, 0, wx.EXPAND | wx.ALL, 8)
+        
+        # Help text for document processing
+        doc_help_text = wx.StaticText(doc_panel,
+            label="Chunk size determines how documents are split for embedding.\n"
+                  "Smaller chunks: More precise matching, larger chunks: Better context retention.\n"
+                  "Overlap helps maintain context across chunk boundaries.")
+        doc_help_text.SetFont(doc_help_text.GetFont().Smaller())
+        doc_box.Add(doc_help_text, 0, wx.ALL, 8)
+        
+        sizer.Add(doc_box, 0, wx.EXPAND | wx.ALL, 12)
+        
+        # Storage Settings
+        storage_box = wx.StaticBoxSizer(wx.VERTICAL, panel, "Storage")
+        storage_panel = storage_box.GetStaticBox()
+        
+        # Persist directory
+        dir_sizer = wx.BoxSizer(wx.HORIZONTAL)
+        dir_sizer.Add(wx.StaticText(storage_panel, label="Embeddings directory:"), 0, wx.ALIGN_CENTER_VERTICAL | wx.RIGHT, 10)
+        self.persist_dir_text = wx.TextCtrl(storage_panel, style=wx.TE_READONLY)
+        dir_sizer.Add(self.persist_dir_text, 1, wx.EXPAND | wx.RIGHT, 5)
+        
+        self.browse_dir_btn = wx.Button(storage_panel, label="Browse...")
+        dir_sizer.Add(self.browse_dir_btn, 0)
+        
+        storage_box.Add(dir_sizer, 0, wx.EXPAND | wx.ALL, 8)
+        
+        sizer.Add(storage_box, 0, wx.EXPAND | wx.ALL, 12)
+        
+        panel.SetSizer(sizer)
+        
+        # Bind events for custom model handling
+        self.embedding_model_choice.Bind(wx.EVT_CHOICE, self._on_embedding_model_changed)
+        self.browse_dir_btn.Bind(wx.EVT_BUTTON, self._on_browse_directory)
+        
+        # Initially hide custom model entry
+        self._on_embedding_model_changed(None)
     
     def _create_server_page(self) -> None:
         """Create the server settings page."""
@@ -352,6 +482,24 @@ class SettingsDialog(wx.Dialog):
         self.use_ai_titles_cb.SetValue(config.ui_preferences.use_ai_generated_titles)
         self.auto_scroll_chat_cb.SetValue(config.ui_preferences.auto_scroll_chat)
         self.stream_responses_cb.SetValue(config.chat_defaults.stream_responses)
+        
+        # Embeddings page
+        try:
+            self.embedding_model_choice.SetStringSelection(config.embeddings.default_model)
+        except:
+            self.embedding_model_choice.SetSelection(0)  # Default to first option
+            
+        self.rag_enabled_cb.SetValue(config.embeddings.rag_enabled)
+        self.search_limit_spin.SetValue(config.embeddings.search_results_limit)
+        self.similarity_threshold_spin.SetValue(config.embeddings.similarity_threshold)
+        self.chunk_size_spin.SetValue(config.embeddings.chunk_size)
+        self.chunk_overlap_spin.SetValue(config.embeddings.chunk_overlap)
+        self.auto_create_collections_cb.SetValue(config.embeddings.auto_create_collections)
+        self.default_collection_text.SetValue(config.embeddings.default_collection_name)
+        self.persist_dir_text.SetValue(config.embeddings.persist_directory or "")
+        
+        # Update custom model visibility
+        self._on_embedding_model_changed(None)
     
     def _save_values(self) -> bool:
         """Save UI values to the temporary configuration."""
@@ -396,6 +544,25 @@ class SettingsDialog(wx.Dialog):
             config.ui_preferences.auto_scroll_chat = self.auto_scroll_chat_cb.GetValue()
             config.chat_defaults.stream_responses = self.stream_responses_cb.GetValue()
             
+            # Embeddings page
+            selected_model = self.embedding_model_choice.GetStringSelection()
+            if selected_model == "custom":
+                config.embeddings.default_model = self.custom_embedding_model.GetValue().strip()
+            else:
+                config.embeddings.default_model = selected_model
+                
+            config.embeddings.rag_enabled = self.rag_enabled_cb.GetValue()
+            config.embeddings.search_results_limit = self.search_limit_spin.GetValue()
+            config.embeddings.similarity_threshold = self.similarity_threshold_spin.GetValue()
+            config.embeddings.chunk_size = self.chunk_size_spin.GetValue()
+            config.embeddings.chunk_overlap = self.chunk_overlap_spin.GetValue()
+            config.embeddings.auto_create_collections = self.auto_create_collections_cb.GetValue()
+            config.embeddings.default_collection_name = self.default_collection_text.GetValue().strip()
+            
+            # Handle persist directory
+            persist_dir = self.persist_dir_text.GetValue().strip()
+            config.embeddings.persist_directory = persist_dir if persist_dir else None
+            
             return True
             
         except ValueError as e:
@@ -404,6 +571,36 @@ class SettingsDialog(wx.Dialog):
         except Exception as e:
             wx.MessageBox(f"Error saving settings: {e}", "Error", wx.OK | wx.ICON_ERROR)
             return False
+    
+    def _on_embedding_model_changed(self, event) -> None:
+        """Handle embedding model selection change."""
+        selection = self.embedding_model_choice.GetSelection()
+        model_name = self.embedding_model_choice.GetString(selection) if selection != -1 else ""
+        
+        # Show/hide custom model entry based on selection
+        show_custom = model_name == "custom"
+        
+        # Show/hide the custom model controls
+        self.custom_model_label.Show(show_custom)
+        self.custom_embedding_model.Show(show_custom)
+        
+        # Refresh layout
+        self.custom_model_sizer.GetContainingWindow().Layout()
+    
+    def _on_browse_directory(self, event: wx.CommandEvent) -> None:
+        """Browse for embeddings directory."""
+        current_dir = self.persist_dir_text.GetValue()
+        if not current_dir:
+            current_dir = str(Path.home())
+        
+        with wx.DirDialog(
+            self,
+            message="Choose embeddings directory",
+            defaultPath=current_dir,
+            style=wx.DD_DEFAULT_STYLE | wx.DD_DIR_MUST_EXIST
+        ) as dialog:
+            if dialog.ShowModal() == wx.ID_OK:
+                self.persist_dir_text.SetValue(dialog.GetPath())
     
     def _on_test_connection(self, event: wx.CommandEvent) -> None:
         """Test the Ollama server connection."""

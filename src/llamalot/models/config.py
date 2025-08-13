@@ -88,6 +88,33 @@ class ChatDefaults:
 
 
 @dataclass
+class EmbeddingsConfig:
+    """Configuration for embeddings and RAG functionality."""
+    
+    # Default embedding model
+    default_model: str = "nomic-embed-text"
+    
+    # RAG settings
+    rag_enabled: bool = False
+    active_collections: List[str] = field(default_factory=list)
+    
+    # Document processing
+    chunk_size: int = 2000
+    chunk_overlap: int = 200
+    
+    # Search settings
+    search_results_limit: int = 5
+    similarity_threshold: float = 0.7
+    
+    # Collection management
+    auto_create_collections: bool = True
+    default_collection_name: str = "documents"
+    
+    # ChromaDB settings
+    persist_directory: Optional[str] = None  # Will be set to data_directory/embeddings by default
+
+
+@dataclass
 class ApplicationConfig:
     """Main application configuration."""
     
@@ -99,6 +126,9 @@ class ApplicationConfig:
     
     # Chat defaults
     chat_defaults: ChatDefaults = field(default_factory=ChatDefaults)
+    
+    # Embeddings configuration
+    embeddings: EmbeddingsConfig = field(default_factory=EmbeddingsConfig)
     
     # Data directories
     data_directory: Optional[str] = None
@@ -132,6 +162,10 @@ class ApplicationConfig:
         
         if self.database_file is None:
             self.database_file = str(Path(self.data_directory) / "llamalot.db")
+        
+        # Set embeddings persist directory if not specified
+        if self.embeddings.persist_directory is None:
+            self.embeddings.persist_directory = str(Path(self.data_directory) / "embeddings")
     
     @staticmethod
     def get_default_data_directory() -> Path:
@@ -162,7 +196,8 @@ class ApplicationConfig:
         directories = [
             self.data_directory,
             self.cache_directory,
-            self.logs_directory
+            self.logs_directory,
+            self.embeddings.persist_directory
         ]
         
         for directory in directories:
@@ -259,6 +294,18 @@ class ApplicationConfig:
                 'default_system_prompt': self.chat_defaults.default_system_prompt,
                 'stream_responses': self.chat_defaults.stream_responses,
             },
+            'embeddings': {
+                'default_model': self.embeddings.default_model,
+                'rag_enabled': self.embeddings.rag_enabled,
+                'active_collections': self.embeddings.active_collections,
+                'chunk_size': self.embeddings.chunk_size,
+                'chunk_overlap': self.embeddings.chunk_overlap,
+                'search_results_limit': self.embeddings.search_results_limit,
+                'similarity_threshold': self.embeddings.similarity_threshold,
+                'auto_create_collections': self.embeddings.auto_create_collections,
+                'default_collection_name': self.embeddings.default_collection_name,
+                'persist_directory': self.embeddings.persist_directory,
+            },
             'data_directory': self.data_directory,
             'cache_directory': self.cache_directory,
             'logs_directory': self.logs_directory,
@@ -318,10 +365,26 @@ class ApplicationConfig:
             stream_responses=chat_data.get('stream_responses', True)
         )
         
+        # Create embeddings config
+        embeddings_data = data.get('embeddings', {})
+        embeddings = EmbeddingsConfig(
+            default_model=embeddings_data.get('default_model', 'nomic-embed-text'),
+            rag_enabled=embeddings_data.get('rag_enabled', False),
+            active_collections=embeddings_data.get('active_collections', []),
+            chunk_size=embeddings_data.get('chunk_size', 2000),
+            chunk_overlap=embeddings_data.get('chunk_overlap', 200),
+            search_results_limit=embeddings_data.get('search_results_limit', 5),
+            similarity_threshold=embeddings_data.get('similarity_threshold', 0.7),
+            auto_create_collections=embeddings_data.get('auto_create_collections', True),
+            default_collection_name=embeddings_data.get('default_collection_name', 'documents'),
+            persist_directory=embeddings_data.get('persist_directory')
+        )
+        
         return cls(
             ollama_server=ollama_server,
             ui_preferences=ui_preferences,
             chat_defaults=chat_defaults,
+            embeddings=embeddings,
             data_directory=data.get('data_directory'),
             cache_directory=data.get('cache_directory'),
             logs_directory=data.get('logs_directory'),

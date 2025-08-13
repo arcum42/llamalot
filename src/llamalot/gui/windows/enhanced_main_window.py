@@ -25,6 +25,12 @@ from llamalot.gui.dialogs.model_pull_progress_dialog import ModelPullProgressDia
 from llamalot.gui.dialogs.settings_dialog import SettingsDialog
 from llamalot.gui.dialogs.create_model_dialog import CreateModelDialog
 from llamalot.gui.components.image_attachment_panel import ImageAttachmentPanel
+from llamalot.gui.components.embeddings_panel import EmbeddingsPanel
+from llamalot.gui.tabs.history_tab import HistoryTab
+from llamalot.gui.tabs.embeddings_tab import EmbeddingsTab
+from llamalot.gui.tabs.batch_tab import BatchTab
+from llamalot.gui.tabs.chat_tab import ChatTab
+from llamalot.gui.tabs.models_tab import ModelsTab
 
 logger = get_logger(__name__)
 
@@ -67,14 +73,9 @@ class EnhancedMainWindow(wx.Frame):
         """Initialize UI components and load data."""
         # Initialize application state
         # Initialize model list
-        self.models: List[OllamaModel] = []
         self.current_model: Optional[OllamaModel] = None
         
-        # Sorting state
-        self.sort_column: int = 1  # Default sort by Name column
-        self.sort_ascending: bool = True
         self.current_conversation: Optional[ChatConversation] = None
-        self._modelfile_loaded = False  # Track if modelfile has been loaded for current model
         
         # Chat history state
         self.selected_conversation_id: Optional[str] = None
@@ -134,8 +135,12 @@ class EnhancedMainWindow(wx.Frame):
         self.notebook = wx.Notebook(self.main_panel)
         
         # Create tabs
-        self._create_chat_tab()
-        self._create_batch_tab()
+        self.models_tab = ModelsTab(self.notebook, self)
+        self.notebook.AddPage(self.models_tab, "🔧 Models")
+        # Create chat tab
+        self.chat_tab = ChatTab(self.notebook, self)
+        self.notebook.AddPage(self.chat_tab, "💬 Chat")
+        self.batch_tab = BatchTab(self.notebook, self.ollama_client, self.cache_manager, self)
         
         main_sizer.Add(self.notebook, 1, wx.EXPAND | wx.ALL, 5)
         self.main_panel.SetSizer(main_sizer)
@@ -170,6 +175,11 @@ class EnhancedMainWindow(wx.Frame):
         # Pull model
         pull_item = tools_menu.Append(wx.ID_ANY, "&Pull Model...", "Pull a new model from registry")
         
+        tools_menu.AppendSeparator()
+        
+        # New Chat
+        new_chat_item = tools_menu.Append(wx.ID_ANY, "&New Chat\tCtrl+N", "Start a new conversation with the current model")
+        
         # Help menu
         help_menu = wx.Menu()
         about_item = help_menu.Append(wx.ID_ABOUT, "&About", "About LlamaLot")
@@ -185,311 +195,140 @@ class EnhancedMainWindow(wx.Frame):
         self.Bind(wx.EVT_MENU, self._on_settings, settings_item)
         self.Bind(wx.EVT_MENU, self._on_exit, exit_item)
         self.Bind(wx.EVT_MENU, self._on_refresh_models, refresh_item)
+        self.Bind(wx.EVT_MENU, self._on_pull_model, pull_item)
+        self.Bind(wx.EVT_MENU, self.on_new_chat, new_chat_item)
         self.Bind(wx.EVT_MENU, self._on_about, about_item)
     
         
-    def _create_chat_tab(self) -> None:
-        """Create the main chat tab with existing functionality."""
-        # Create chat panel (existing functionality)
-        self.chat_panel = wx.Panel(self.notebook)
-        
-        # Create main splitter (horizontal - left/right) in chat tab
-        self.main_splitter = wx.SplitterWindow(
-            self.chat_panel, 
-            style=wx.SP_3D | wx.SP_LIVE_UPDATE
-        )
-        self.main_splitter.SetMinimumPaneSize(250)
-        
-        # Create left panel (models)
-        self.left_panel = wx.Panel(self.main_splitter)
-        self._create_left_panel()
-        
-        # Create right panel (model details and basic chat)
-        self.right_panel = wx.Panel(self.main_splitter)
-        self._create_right_panel()
-        
-        # Split the main window - larger left panel to show all model columns
-        self.main_splitter.SplitVertically(self.left_panel, self.right_panel, 600)
-        
-        # Chat tab sizer
-        chat_sizer = wx.BoxSizer(wx.VERTICAL)
-        chat_sizer.Add(self.main_splitter, 1, wx.EXPAND)
-        self.chat_panel.SetSizer(chat_sizer)
-        
-        # Add tab to notebook
-        self.notebook.AddPage(self.chat_panel, "💬 Chat", True)
-        
-    def _create_batch_tab(self) -> None:
-        """Create the batch processing tab."""
-        from llamalot.gui.components.batch_processing_panel import BatchProcessingPanel
-        
-        # Create batch processing panel
-        self.batch_panel = BatchProcessingPanel(
-            self.notebook,
-            self.ollama_client,
-            self.cache_manager,
-            on_status_update=self._on_batch_status_update
-        )
-        
-        # Add tab to notebook
-        self.notebook.AddPage(self.batch_panel, "🔄 Batch Processing", False)
+        # Create embeddings tab
+        self.embeddings_tab = EmbeddingsTab(self.notebook, self)
         
         # Create chat history tab
-        self.create_chat_history_tab()
+        self.history_tab = HistoryTab(self.notebook, self.db_manager, self)
         
-    def create_chat_history_tab(self) -> None:
-        """Create the chat history tab with conversation list and viewer."""
-        # Create the history panel
-        self.history_panel = wx.Panel(self.notebook)
+    def get_embeddings_context(self, query: str, max_results: int = 3) -> List:
+        """
+        Get embeddings context for chat integration.
         
-        # Main splitter for conversation list and detail view
-        splitter = wx.SplitterWindow(self.history_panel, style=wx.SP_3D | wx.SP_LIVE_UPDATE)
-        
-        # Left panel: Conversation list
-        list_panel = wx.Panel(splitter)
-        list_sizer = wx.BoxSizer(wx.VERTICAL)
-        
-        # Header with refresh button
-        header_sizer = wx.BoxSizer(wx.HORIZONTAL)
-        history_label = wx.StaticText(list_panel, label="Chat History")
-        history_label.SetFont(wx.Font(12, wx.FONTFAMILY_DEFAULT, wx.FONTSTYLE_NORMAL, wx.FONTWEIGHT_BOLD))
-        
-        self.refresh_history_btn = wx.Button(list_panel, label="Refresh", size=wx.Size(80, 25))
-        self.refresh_history_btn.SetToolTip("Refresh conversation list")
-        
-        header_sizer.Add(history_label, 1, wx.ALIGN_CENTER_VERTICAL)
-        header_sizer.Add(self.refresh_history_btn, 0, wx.ALIGN_CENTER_VERTICAL)
-        
-        # Conversation list
-        self.conversation_list = wx.ListCtrl(
-            list_panel,
-            style=wx.LC_REPORT | wx.LC_SINGLE_SEL | wx.LC_HRULES | wx.LC_VRULES
-        )
-        
-        # Setup conversation list columns
-        self.conversation_list.AppendColumn("Title", width=200)
-        self.conversation_list.AppendColumn("Model", width=120)
-        self.conversation_list.AppendColumn("Messages", width=80)
-        self.conversation_list.AppendColumn("Created", width=150)
-        
-        # Delete button
-        self.delete_conversation_btn = wx.Button(list_panel, label="Delete")
-        self.delete_conversation_btn.SetToolTip("Delete selected conversation")
-        self.delete_conversation_btn.Enable(False)
-        
-        list_sizer.Add(header_sizer, 0, wx.EXPAND | wx.ALL, 5)
-        list_sizer.Add(self.conversation_list, 1, wx.EXPAND | wx.ALL, 5)
-        list_sizer.Add(self.delete_conversation_btn, 0, wx.ALIGN_CENTER | wx.ALL, 5)
-        list_panel.SetSizer(list_sizer)
-        
-        # Right panel: Conversation viewer
-        viewer_panel = wx.Panel(splitter)
-        viewer_sizer = wx.BoxSizer(wx.VERTICAL)
-        
-        # Conversation display
-        self.conversation_display = wx.TextCtrl(
-            viewer_panel,
-            style=wx.TE_MULTILINE | wx.TE_READONLY | wx.TE_RICH2
-        )
-        self.conversation_display.SetFont(wx.Font(10, wx.FONTFAMILY_TELETYPE, wx.FONTSTYLE_NORMAL, wx.FONTWEIGHT_NORMAL))
-        
-        viewer_sizer.Add(self.conversation_display, 1, wx.EXPAND | wx.ALL, 5)
-        viewer_panel.SetSizer(viewer_sizer)
-        
-        # Setup splitter
-        splitter.SplitVertically(list_panel, viewer_panel)
-        splitter.SetMinimumPaneSize(200)
-        splitter.SetSashPosition(400)
-        
-        # Main panel layout
-        history_sizer = wx.BoxSizer(wx.VERTICAL)
-        history_sizer.Add(splitter, 1, wx.EXPAND)
-        self.history_panel.SetSizer(history_sizer)
-        
-        # Add tab to notebook
-        self.notebook.AddPage(self.history_panel, "📚 History", False)
-        
-        # Bind events
-        self.refresh_history_btn.Bind(wx.EVT_BUTTON, self.on_refresh_history)
-        self.conversation_list.Bind(wx.EVT_LIST_ITEM_SELECTED, self.on_conversation_selected)
-        self.conversation_list.Bind(wx.EVT_LIST_ITEM_DESELECTED, self.on_conversation_deselected)
-        self.delete_conversation_btn.Bind(wx.EVT_BUTTON, self.on_delete_conversation)
-        
-        # Load initial conversation list
-        self.refresh_conversation_list()
-        
-    def _on_batch_status_update(self, message: str) -> None:
-        """Handle status updates from batch processing."""
-        if hasattr(self, 'status_bar'):
-            self.status_bar.SetStatusText(f"Batch: {message}", 1)
+        Args:
+            query: The user's query to search for relevant context
+            max_results: Maximum number of context results to return
+            
+        Returns:
+            List of relevant document excerpts for context
+        """
+        try:
+            if hasattr(self, 'embeddings_tab') and self.embeddings_tab:
+                return self.embeddings_tab.get_embeddings_context(query, max_results)
+            return []
+        except Exception as e:
+            logger.error(f"Error getting embeddings context: {e}")
+            return []
     
-    def _create_left_panel(self) -> None:
-        """Create the left panel with model list."""
-        sizer = wx.BoxSizer(wx.VERTICAL)
-        
-        # Model list header
-        header_sizer = wx.BoxSizer(wx.HORIZONTAL)
-        model_label = wx.StaticText(self.left_panel, label="Available Models")
-        model_label.SetFont(wx.Font(12, wx.FONTFAMILY_DEFAULT, wx.FONTSTYLE_NORMAL, wx.FONTWEIGHT_BOLD))
-        
-        # Refresh button
-        self.refresh_btn = wx.Button(self.left_panel, label="Refresh", size=wx.Size(80, 25))
-        self.refresh_btn.SetToolTip("Refresh model list from Ollama")
-        
-        header_sizer.Add(model_label, 1, wx.ALIGN_CENTER_VERTICAL)
-        header_sizer.Add(self.refresh_btn, 0, wx.ALIGN_CENTER_VERTICAL)
-        
-        # Model list control
-        self.model_list = wx.ListCtrl(
-            self.left_panel,
-            style=wx.LC_REPORT | wx.LC_SINGLE_SEL | wx.LC_HRULES
-        )
-        
-        # Add columns - Running column first for visibility
-        self.model_list.AppendColumn("Running", width=60)
-        self.model_list.AppendColumn("Name", width=200)
-        self.model_list.AppendColumn("Size", width=80)
-        self.model_list.AppendColumn("Modified", width=100)
-        self.model_list.AppendColumn("Capabilities", width=120)
-        
-        # Add to sizer
-        sizer.Add(header_sizer, 0, wx.EXPAND | wx.ALL, 10)
-        sizer.Add(self.model_list, 1, wx.EXPAND | wx.LEFT | wx.RIGHT | wx.BOTTOM, 10)
-        
-        self.left_panel.SetSizer(sizer)
+    def _on_refresh_models(self, event: wx.CommandEvent) -> None:
+        """Delegate refresh models to the models tab."""
+        if hasattr(self, 'models_tab'):
+            self.models_tab.on_refresh(event)
     
-    def _create_right_panel(self) -> None:
-        """Create the right panel with model management, chat section, and model information."""
+    def _on_pull_model(self, event: wx.CommandEvent) -> None:
+        """Delegate pull model to the models tab."""
+        if hasattr(self, 'models_tab'):
+            self.models_tab.on_pull_model(event)
+    
+
+    
+
+    
+    def _create_models_details_panel(self) -> None:
+        """Create the model details and management panel for the models tab."""
         sizer = wx.BoxSizer(wx.VERTICAL)
         
         # Model Management section
-        mgmt_label = wx.StaticText(self.right_panel, label="Model Management")
+        mgmt_label = wx.StaticText(self.models_right_panel, label="Model Management")
         mgmt_label.SetFont(wx.Font(12, wx.FONTFAMILY_DEFAULT, wx.FONTSTYLE_NORMAL, wx.FONTWEIGHT_BOLD))
         
         # Model actions buttons
         action_sizer = wx.BoxSizer(wx.HORIZONTAL)
-        self.pull_btn = wx.Button(self.right_panel, label="Pull Model", size=wx.Size(80, 25))
-        self.create_btn = wx.Button(self.right_panel, label="Create Model", size=wx.Size(100, 25))
-        self.delete_btn = wx.Button(self.right_panel, label="Delete", size=wx.Size(80, 25))
+        self.models_pull_btn = wx.Button(self.models_right_panel, label="Pull Model", size=wx.Size(80, 25))
+        self.models_create_btn = wx.Button(self.models_right_panel, label="Create Model", size=wx.Size(100, 25))
+        self.models_delete_btn = wx.Button(self.models_right_panel, label="Delete", size=wx.Size(80, 25))
         
         # Initially disable action buttons until a model is selected
-        self.delete_btn.Enable(False)
+        self.models_delete_btn.Enable(False)
         
-        action_sizer.Add(self.pull_btn, 0, wx.RIGHT, 5)
-        action_sizer.Add(self.create_btn, 0, wx.RIGHT, 5)
-        action_sizer.Add(self.delete_btn, 0)
+        action_sizer.Add(self.models_pull_btn, 0, wx.RIGHT, 5)
+        action_sizer.Add(self.models_create_btn, 0, wx.RIGHT, 5)
+        action_sizer.Add(self.models_delete_btn, 0)
         
-        # Quick Chat section (moved up and given more space)
-        chat_label = wx.StaticText(self.right_panel, label="Quick Chat")
+        # Chat actions section
+        chat_label = wx.StaticText(self.models_right_panel, label="Chat Actions")
         chat_label.SetFont(wx.Font(12, wx.FONTFAMILY_DEFAULT, wx.FONTSTYLE_NORMAL, wx.FONTWEIGHT_BOLD))
         
-        # Chat output (larger now)
-        self.chat_output = wx.TextCtrl(
-            self.right_panel,
-            style=wx.TE_MULTILINE | wx.TE_READONLY,
-            size=wx.Size(-1, 200)  # Increased from 120 to 200
-        )
+        chat_action_sizer = wx.BoxSizer(wx.HORIZONTAL)
+        self.models_new_chat_btn = wx.Button(self.models_right_panel, label="New Chat", size=wx.Size(100, 30))
+        self.models_new_chat_btn.SetToolTip("Start a new chat with the highlighted model")
+        self.models_new_chat_btn.Enable(False)  # Initially disabled until a model is selected
         
-        # Replace the old image attachment section with the new component
-        self.image_attachment_panel = ImageAttachmentPanel(
-            self.right_panel,
-            on_images_changed=self._on_images_changed
-        )
-        # Panel starts hidden - will be shown when a vision model is selected
+        chat_action_sizer.Add(self.models_new_chat_btn, 0)
         
-        # Chat input
-        input_sizer = wx.BoxSizer(wx.HORIZONTAL)
-        self.chat_input = wx.TextCtrl(
-            self.right_panel,
-            style=wx.TE_PROCESS_ENTER,
-            size=wx.Size(-1, 25)
-        )
-        self.send_btn = wx.Button(self.right_panel, label="Send", size=wx.Size(60, 25))
-        self.new_chat_btn = wx.Button(self.right_panel, label="New Chat", size=wx.Size(80, 25))
-        self.new_chat_btn.SetToolTip("Start a new conversation with the current model")
-        
-        input_sizer.Add(self.chat_input, 1, wx.EXPAND | wx.RIGHT, 5)
-        input_sizer.Add(self.new_chat_btn, 0, wx.RIGHT, 5)
-        input_sizer.Add(self.send_btn, 0)
-        
-        # Model details section with tabs (moved to bottom)
-        info_label = wx.StaticText(self.right_panel, label="Model Information")
+        # Model details section with tabs
+        info_label = wx.StaticText(self.models_right_panel, label="Model Information")
         info_label.SetFont(wx.Font(12, wx.FONTFAMILY_DEFAULT, wx.FONTSTYLE_NORMAL, wx.FONTWEIGHT_BOLD))
         
-        self.details_notebook = wx.Notebook(self.right_panel)
+        self.models_details_notebook = wx.Notebook(self.models_right_panel)
         
         # Overview tab
-        self.overview_panel = wx.Panel(self.details_notebook)
-        self.overview_text = wx.TextCtrl(
-            self.overview_panel,
+        self.models_overview_panel = wx.Panel(self.models_details_notebook)
+        self.models_overview_text = wx.TextCtrl(
+            self.models_overview_panel,
             style=wx.TE_MULTILINE | wx.TE_READONLY,
-            size=wx.Size(-1, 120)  # Reduced from 150 to 120
+            size=wx.Size(-1, 200)
         )
-        self.overview_text.SetValue("Select a model to view details...")
+        self.models_overview_text.SetValue("Select a model to view details...")
         overview_sizer = wx.BoxSizer(wx.VERTICAL)
-        overview_sizer.Add(self.overview_text, 1, wx.EXPAND | wx.ALL, 5)
-        self.overview_panel.SetSizer(overview_sizer)
+        overview_sizer.Add(self.models_overview_text, 1, wx.EXPAND | wx.ALL, 5)
+        self.models_overview_panel.SetSizer(overview_sizer)
         
         # Capabilities tab
-        self.capabilities_panel = wx.Panel(self.details_notebook)
-        self.capabilities_text = wx.TextCtrl(
-            self.capabilities_panel,
+        self.models_capabilities_panel = wx.Panel(self.models_details_notebook)
+        self.models_capabilities_text = wx.TextCtrl(
+            self.models_capabilities_panel,
             style=wx.TE_MULTILINE | wx.TE_READONLY,
-            size=wx.Size(-1, 120)  # Reduced from 150 to 120
+            size=wx.Size(-1, 200)
         )
-        capabilities_sizer = wx.BoxSizer(wx.VERTICAL)
-        capabilities_sizer.Add(self.capabilities_text, 1, wx.EXPAND | wx.ALL, 5)
-        self.capabilities_panel.SetSizer(capabilities_sizer)
+        models_capabilities_sizer = wx.BoxSizer(wx.VERTICAL)
+        models_capabilities_sizer.Add(self.models_capabilities_text, 1, wx.EXPAND | wx.ALL, 5)
+        self.models_capabilities_panel.SetSizer(models_capabilities_sizer)
         
         # Modelfile tab
-        self.modelfile_panel = wx.Panel(self.details_notebook)
-        self.modelfile_text = wx.TextCtrl(
-            self.modelfile_panel,
+        self.models_modelfile_panel = wx.Panel(self.models_details_notebook)
+        self.models_modelfile_text = wx.TextCtrl(
+            self.models_modelfile_panel,
             style=wx.TE_MULTILINE | wx.TE_READONLY,
-            size=wx.Size(-1, 120)  # Reduced from 150 to 120
+            size=wx.Size(-1, 200)
         )
-        modelfile_sizer = wx.BoxSizer(wx.VERTICAL)
-        modelfile_sizer.Add(self.modelfile_text, 1, wx.EXPAND | wx.ALL, 5)
-        self.modelfile_panel.SetSizer(modelfile_sizer)
+        models_modelfile_sizer = wx.BoxSizer(wx.VERTICAL)
+        models_modelfile_sizer.Add(self.models_modelfile_text, 1, wx.EXPAND | wx.ALL, 5)
+        self.models_modelfile_panel.SetSizer(models_modelfile_sizer)
         
         # Add tabs to notebook
-        self.details_notebook.AddPage(self.overview_panel, "Overview")
-        self.details_notebook.AddPage(self.capabilities_panel, "Capabilities")
-        self.details_notebook.AddPage(self.modelfile_panel, "Modelfile")
+        self.models_details_notebook.AddPage(self.models_overview_panel, "Overview")
+        self.models_details_notebook.AddPage(self.models_capabilities_panel, "Capabilities")
+        self.models_details_notebook.AddPage(self.models_modelfile_panel, "Modelfile")
         
-        # Add to main sizer with new layout order
+        # Add to main sizer
         sizer.Add(mgmt_label, 0, wx.ALL, 10)
         sizer.Add(action_sizer, 0, wx.EXPAND | wx.LEFT | wx.RIGHT, 10)
         sizer.Add(chat_label, 0, wx.ALL, 10)
-        sizer.Add(self.chat_output, 1, wx.EXPAND | wx.LEFT | wx.RIGHT, 10)  # Changed proportion to 1 for more space
-        sizer.Add(self.image_attachment_panel, 0, wx.EXPAND | wx.LEFT | wx.RIGHT, 10)  # New image attachment component
-        sizer.Add(input_sizer, 0, wx.EXPAND | wx.ALL, 10)
+        sizer.Add(chat_action_sizer, 0, wx.EXPAND | wx.LEFT | wx.RIGHT, 10)
         sizer.Add(info_label, 0, wx.ALL, 10)
-        sizer.Add(self.details_notebook, 0, wx.EXPAND | wx.LEFT | wx.RIGHT | wx.BOTTOM, 10)  # Changed proportion to 0
+        sizer.Add(self.models_details_notebook, 1, wx.EXPAND | wx.LEFT | wx.RIGHT | wx.BOTTOM, 10)
         
-        self.right_panel.SetSizer(sizer)
-        
+        self.models_right_panel.SetSizer(sizer)
+    
     
     def _bind_events(self) -> None:
-        """Bind event handlers."""
-        # Button events
-        self.Bind(wx.EVT_BUTTON, self.on_refresh, self.refresh_btn)
-        self.Bind(wx.EVT_BUTTON, self.on_pull_model, self.pull_btn)
-        self.Bind(wx.EVT_BUTTON, self.on_create_model, self.create_btn)
-        self.Bind(wx.EVT_BUTTON, self.on_delete_model, self.delete_btn)
-        self.Bind(wx.EVT_BUTTON, self.on_send_message, self.send_btn)
-        self.Bind(wx.EVT_BUTTON, self.on_new_chat, self.new_chat_btn)
-        
-        # List events
-        self.Bind(wx.EVT_LIST_ITEM_SELECTED, self.on_model_selected, self.model_list)
-        self.Bind(wx.EVT_LIST_COL_CLICK, self.on_column_click, self.model_list)
-        
-        # Notebook events
-        self.Bind(wx.EVT_NOTEBOOK_PAGE_CHANGED, self.on_tab_changed, self.details_notebook)
-        
-        # Text events
-        self.Bind(wx.EVT_TEXT_ENTER, self.on_chat_input_enter, self.chat_input)
-        
+        """Bind event handlers."""        
         # Window events
         self.Bind(wx.EVT_CLOSE, self.on_close)
         
@@ -516,14 +355,9 @@ class EnhancedMainWindow(wx.Frame):
         try:
             self.status_bar.SetStatusText("Loading models...", 0)
             
-            # Get models from cache (smart caching - only refresh if needed)
-            self.models = self.cache_manager.get_models(force_refresh=False)
-            
-            # Apply initial sorting
-            self._sort_models()
-            
-            # Update model list
-            self._update_model_list()
+            # Delegate model loading to the models tab
+            if hasattr(self, 'models_tab'):
+                self.models_tab.refresh_models()
             
             # Auto-select default model if configured
             if (self.config.ui_preferences.auto_select_default_model and 
@@ -532,7 +366,6 @@ class EnhancedMainWindow(wx.Frame):
                 self._select_default_model()
             
             self.status_bar.SetStatusText("Ready", 0)
-            self.status_bar.SetStatusText(f"{len(self.models)} models", 1)
             
         except Exception as e:
             logger.error(f"Failed to load models: {e}")
@@ -543,39 +376,7 @@ class EnhancedMainWindow(wx.Frame):
                 wx.OK | wx.ICON_ERROR
             )
     
-    def _update_model_list(self) -> None:
-        """Update the model list display."""
-        self.model_list.DeleteAllItems()
-        
-        # Get running models
-        running_models = []
-        try:
-            running_models = self.ollama_client.get_running_models()
-        except Exception as e:
-            logger.warning(f"Could not get running models: {e}")
-        
-        for i, model in enumerate(self.models):
-            # Check if running
-            running_str = "●" if model.name in running_models else ""
-            
-            # Format size
-            size_str = self._format_size(model.size)
-            
-            # Format date
-            date_str = model.modified_at.strftime("%m/%d/%y") if model.modified_at else "Unknown"
-            
-            # Format capabilities
-            capabilities_str = ", ".join(model.capabilities) if model.capabilities else "text"
-            
-            # Add to list - Running column first (0), then Name (1), Size (2), Modified (3), Capabilities (4)
-            index = self.model_list.InsertItem(i, running_str)  # Running column first
-            self.model_list.SetItem(index, 1, model.name)       # Name
-            self.model_list.SetItem(index, 2, size_str)         # Size
-            self.model_list.SetItem(index, 3, date_str)         # Modified
-            self.model_list.SetItem(index, 4, capabilities_str) # Capabilities
-        
-        # Update column headers with sort indicators
-        self._update_column_headers()
+
     
     def _format_size(self, size_bytes: int) -> str:
         """Format size in bytes to human readable string."""
@@ -605,15 +406,15 @@ class EnhancedMainWindow(wx.Frame):
             for i, model in enumerate(self.models):
                 if model.name == model_name:
                     # Select the item in the list
-                    self.model_list.Select(i)
-                    self.model_list.EnsureVisible(i)
+                    self.models_list.Select(i)
+                    self.models_list.EnsureVisible(i)
                     
                     # Trigger the selection event manually to update UI
                     self.current_model = model
-                    self.delete_btn.Enable(True)
+                    self.models_delete_btn.Enable(True)
                     self._update_model_details()
-                    self._update_image_panel_visibility()
-                    self._start_new_conversation()
+                    self.chat_tab.set_current_model(self.current_model)
+                    self.chat_tab.start_new_conversation()
                     
                     logger.info(f"Auto-selected created model: {model_name}")
                     break
@@ -634,7 +435,7 @@ class EnhancedMainWindow(wx.Frame):
         logger.info("Manual refresh requested - forcing server refresh")
         
         # Disable refresh button to prevent multiple simultaneous refreshes
-        self.refresh_btn.Enable(False)
+        self.models_refresh_btn.Enable(False)
         self.status_bar.SetStatusText("Refreshing models from server...", 0)
         
         def refresh_worker():
@@ -660,7 +461,7 @@ class EnhancedMainWindow(wx.Frame):
     def _refresh_complete(self, models: Optional[List[OllamaModel]], error: Optional[Exception]) -> None:
         """Handle completion of refresh operation (called on main thread)."""
         # Re-enable refresh button
-        self.refresh_btn.Enable(True)
+        self.models_refresh_btn.Enable(True)
         
         if error:
             logger.error(f"Failed to refresh models: {error}")
@@ -671,264 +472,35 @@ class EnhancedMainWindow(wx.Frame):
                 wx.OK | wx.ICON_ERROR
             )
         elif models is not None:
-            # Update model list
-            self.models = models
-            
-            # Apply current sorting
-            self._sort_models()
-            
-            self._update_model_list()
+            # Update model list through the models tab
+            if hasattr(self, 'models_tab'):
+                self.models_tab.refresh_models()
             
             self.status_bar.SetStatusText("Ready", 0)
-            self.status_bar.SetStatusText(f"{len(self.models)} models", 1)
             
             logger.info("Manual refresh completed successfully")
     
-    def on_model_selected(self, event: wx.ListEvent) -> None:
-        """Handle model selection."""
-        selection = self.model_list.GetFirstSelected()
-        if selection >= 0 and selection < len(self.models):
-            self.current_model = self.models[selection]
-            
-            # Enable action buttons
-            self.delete_btn.Enable(True)
-            
-            # Update status bar (now we know current_model is not None)
-            assert self.current_model is not None
-            self.status_bar.SetStatusText(f"Selected: {self.current_model.name}", 1)
-            
-            # Update model details in the notebook tabs
-            self._update_model_details()
-            
-            # Show/hide image panel based on vision capabilities
-            self._update_image_panel_visibility()
-            
-            # Save current conversation before starting a new one
-            self.save_current_conversation()
-            
-            # Initialize a new conversation for this model
-            self._start_new_conversation()
-            
-            # Clear chat and show ready message
-            self.chat_output.Clear()
-            self.chat_output.AppendText(f"Ready to chat with {self.current_model.name}\n")
-            self.chat_output.AppendText("Type a message and press Enter or click Send.\n")
-            
-            # Show image hint for vision models
-            if "vision" in self.current_model.capabilities:
-                self.chat_output.AppendText("📷 This model supports vision! You can attach images to your messages.\n")
-            self.chat_output.AppendText("\n")
-            
-            logger.info(f"Selected model: {self.current_model.name}")
+
     
-    def on_column_click(self, event: wx.ListEvent) -> None:
-        """Handle column header click for sorting."""
-        column = event.GetColumn()
-        
-        # If clicking the same column, toggle sort order
-        if self.sort_column == column:
-            self.sort_ascending = not self.sort_ascending
-        else:
-            # New column, default to ascending
-            self.sort_column = column
-            self.sort_ascending = True
-        
-        # Sort models and update display
-        self._sort_models()
-        self._update_model_list()
-        
-        # Update column headers with sort indicators
-        self._update_column_headers()
-        
-        # Re-select the previously selected model if it exists
-        if self.current_model:
-            self._reselect_current_model()
-        
-        logger.info(f"Sorted by column {column} ({'ascending' if self.sort_ascending else 'descending'})")
+
     
-    def _sort_models(self) -> None:
-        """Sort models based on current sort column and order."""
-        if not self.models:
-            return
-        
-        # Define sort functions for each column
-        def get_sort_key(model: OllamaModel):
-            if self.sort_column == 0:  # Running
-                # Get running models for sorting
-                try:
-                    running_models = self.ollama_client.get_running_models()
-                    return model.name in running_models
-                except:
-                    return False
-            elif self.sort_column == 1:  # Name
-                return model.name.lower()
-            elif self.sort_column == 2:  # Size
-                return model.size
-            elif self.sort_column == 3:  # Modified
-                if model.modified_at:
-                    return model.modified_at
-                else:
-                    # Use epoch time for models without modified_at
-                    return datetime.fromtimestamp(0)
-            elif self.sort_column == 4:  # Capabilities
-                return ", ".join(sorted(model.capabilities)) if model.capabilities else ""
-            else:
-                return model.name.lower()  # Fallback to name
-        
-        self.models.sort(key=get_sort_key, reverse=not self.sort_ascending)
+
     
-    def _update_column_headers(self) -> None:
-        """Update column headers with sort indicators."""
-        # Column names without indicators
-        base_headers = ["Running", "Name", "Size", "Modified", "Capabilities"]
-        
-        for i, header in enumerate(base_headers):
-            if i == self.sort_column:
-                # Add sort indicator
-                indicator = " ↑" if self.sort_ascending else " ↓"
-                self.model_list.SetColumn(i, wx.ListItem())
-                col_info = self.model_list.GetColumn(i)
-                col_info.SetText(header + indicator)
-                self.model_list.SetColumn(i, col_info)
-            else:
-                # Remove indicator
-                self.model_list.SetColumn(i, wx.ListItem())
-                col_info = self.model_list.GetColumn(i)
-                col_info.SetText(header)
-                self.model_list.SetColumn(i, col_info)
-    
-    def _reselect_current_model(self) -> None:
-        """Re-select the current model after sorting."""
-        if not self.current_model:
-            return
-        
-        # Find the new index of the current model
-        for i, model in enumerate(self.models):
-            if model.name == self.current_model.name:
-                self.model_list.Select(i)
-                self.model_list.EnsureVisible(i)
-                break
+
     
     def _update_model_details(self) -> None:
-        """Update the model details tabs with comprehensive information."""
+        """Update the model details for the current chat model (Chat tab only)."""
         if not self.current_model:
             return
+        
+        # Update selected model display in chat tab
+        self.chat_tab.set_current_model(self.current_model)
         
         # Reset modelfile loaded flag for new model
         self._modelfile_loaded = False
-            
-        # Update Overview tab
-        overview_info = f"Model: {self.current_model.name}\n"
-        overview_info += f"Size: {self._format_size(self.current_model.size)}\n"
-        overview_info += f"Modified: {self.current_model.modified_at.strftime('%Y-%m-%d %H:%M') if self.current_model.modified_at else 'Unknown'}\n"
-        overview_info += f"Digest: {self.current_model.digest[:16] if self.current_model.digest else 'Unknown'}...\n\n"
-        
-        # Model section (similar to ollama show output)
-        overview_info += "Model:\n"
-        overview_info += f"  architecture        {self.current_model.details.family or 'Unknown'}\n"
-        if self.current_model.details.parameter_size:
-            overview_info += f"  parameters          {self.current_model.details.parameter_size}\n"
-        elif self.current_model.model_info and self.current_model.model_info.parameter_count:
-            # Format parameter count as B (billions) or M (millions)
-            param_count = self.current_model.model_info.parameter_count
-            if param_count >= 1_000_000_000:
-                param_str = f"{param_count / 1_000_000_000:.1f}B"
-            elif param_count >= 1_000_000:
-                param_str = f"{param_count / 1_000_000:.1f}M"
-            else:
-                param_str = f"{param_count:,}"
-            overview_info += f"  parameters          {param_str}\n"
-        
-        if self.current_model.model_info and self.current_model.model_info.context_length:
-            overview_info += f"  context length      {self.current_model.model_info.context_length:,}\n"
-        if self.current_model.model_info and self.current_model.model_info.embedding_length:
-            overview_info += f"  embedding length    {self.current_model.model_info.embedding_length:,}\n"
-        if self.current_model.details.quantization_level:
-            overview_info += f"  quantization        {self.current_model.details.quantization_level}\n"
-        
-        # Additional technical details section
-        if self.current_model.model_info:
-            has_technical_info = any([
-                self.current_model.model_info.attention_head_count,
-                self.current_model.model_info.attention_head_count_kv,
-                self.current_model.model_info.block_count,
-                self.current_model.model_info.feed_forward_length,
-                self.current_model.model_info.vocab_size
-            ])
-            
-            if has_technical_info:
-                overview_info += "\nTechnical Details:\n"
-                if self.current_model.model_info.attention_head_count:
-                    overview_info += f"  attention heads     {self.current_model.model_info.attention_head_count}\n"
-                if self.current_model.model_info.attention_head_count_kv:
-                    overview_info += f"  key-value heads     {self.current_model.model_info.attention_head_count_kv}\n"
-                if self.current_model.model_info.block_count:
-                    overview_info += f"  transformer blocks  {self.current_model.model_info.block_count}\n"
-                if self.current_model.model_info.feed_forward_length:
-                    overview_info += f"  feed forward size   {self.current_model.model_info.feed_forward_length:,}\n"
-                if self.current_model.model_info.vocab_size:
-                    overview_info += f"  vocabulary size     {self.current_model.model_info.vocab_size:,}\n"
-        
-        # File format information
-        if self.current_model.details.format:
-            overview_info += f"\nFile Format: {self.current_model.details.format.upper()}\n"
-        
-        self.overview_text.SetValue(overview_info)
-        
-        # Update Capabilities tab
-        if hasattr(self.current_model, 'capabilities') and self.current_model.capabilities:
-            capabilities_info = "Detected Capabilities:\n\n"
-            for capability in self.current_model.capabilities:
-                capabilities_info += f"• {capability.upper()}\n"
-                
-                # Add explanations
-                if capability == "completion":
-                    capabilities_info += "  - Text completion and generation\n"
-                elif capability == "vision":
-                    capabilities_info += "  - Image analysis and understanding\n"
-                elif capability == "embedding":
-                    capabilities_info += "  - Vector embeddings for RAG applications\n"
-                elif capability == "tools":
-                    capabilities_info += "  - Function calling and tool usage\n"
-                capabilities_info += "\n"
-        else:
-            capabilities_info = "No specific capabilities detected.\nThis model likely supports text completion."
-        
-        self.capabilities_text.SetValue(capabilities_info)
-        
-        # Update Modelfile tab - clear previous content and mark as ready to load
-        self.modelfile_text.SetValue("Select the Modelfile tab to load content...")
-        
-        # Mark that modelfile needs to be loaded
-        self._modelfile_loaded = False
     
-    def _update_image_panel_visibility(self) -> None:
-        """Show or hide the image panel based on model capabilities."""
-        if self.current_model and "vision" in self.current_model.capabilities:
-            self.image_attachment_panel.show_panel(True)
-        else:
-            self.image_attachment_panel.show_panel(False)
-            # Clear any attached images
-            self.image_attachment_panel.clear_images()
-        
-        # Refresh layout
-        self.right_panel.Layout()
-        logger.info(f"Image panel visible: {self.image_attachment_panel.IsShown()}")
-    
-    def _start_new_conversation(self) -> None:
-        """Start a new conversation with the current model."""
-        if not self.current_model:
-            return
-            
-        self.current_conversation = ChatConversation(
-            conversation_id=str(uuid.uuid4()),
-            title=f"Chat with {self.current_model.name}",
-            model_name=self.current_model.name
-        )
-        # Initialize attached_images list
-        self.attached_images = []
-        logger.debug(f"Started new conversation with {self.current_model.name}")
-    
+
+
     def on_send_message(self, event: wx.CommandEvent) -> None:
         """Handle send message button."""
         self._send_chat_message()
@@ -1077,7 +649,8 @@ class EnhancedMainWindow(wx.Frame):
                 logger.info(f"Saved conversation: {self.current_conversation.title}")
                 
                 # Refresh chat history if the tab is open
-                wx.CallAfter(self.refresh_conversation_list)
+                if hasattr(self, 'history_tab'):
+                    wx.CallAfter(self.history_tab.refresh_conversation_list)
                 
         except Exception as e:
             logger.error(f"Error saving conversation: {e}")
@@ -1247,24 +820,77 @@ Title:"""
                 
         except Exception as e:
             logger.error(f"Error starting new chat: {e}")
+
+    def on_models_new_chat(self, event: wx.CommandEvent) -> None:
+        """Handle new chat button click from Models tab."""
+        try:
+            if self.highlighted_model:
+                # Set the highlighted model as the current chat model
+                self.current_model = self.highlighted_model
+                
+                # Save current conversation if it exists and has messages
+                self.chat_tab.save_current_conversation()
+                
+                # Switch to Chat tab
+                self.notebook.SetSelection(1)  # Chat tab is index 1
+                
+                # Clear the chat display
+                self.chat_tab.clear_chat()
+                
+                # Update chat model display
+                self.chat_tab.set_current_model(self.current_model)
+                
+                # Start a new conversation with the selected model
+                self.chat_tab.start_new_conversation()
+                logger.info(f"Started new chat with {self.highlighted_model.name} from Models tab")
+                
+                # Update status
+                self.status_bar.SetStatusText(f"New chat started with {self.highlighted_model.name}", 0)
+            else:
+                wx.MessageBox("Please select a model first.", "No Model Selected", wx.OK | wx.ICON_WARNING)
+                
+        except Exception as e:
+            logger.error(f"Error starting new chat from Models tab: {e}")
+
+    def on_model_double_click(self, event: wx.ListEvent) -> None:
+        """Handle double-click on model in Models tab."""
+        try:
+            if self.highlighted_model:
+                # Set the highlighted model as the current chat model
+                self.current_model = self.highlighted_model
+                
+                # Save current conversation if it exists and has messages
+                self.chat_tab.save_current_conversation()
+                
+                # Switch to Chat tab
+                self.notebook.SetSelection(1)  # Chat tab is index 1
+                
+                # Clear the chat display
+                self.chat_tab.clear_chat()
+                
+                # Update chat model display
+                self.chat_tab.set_current_model(self.current_model)
+                
+                # Start a new conversation with the selected model
+                self.chat_tab.start_new_conversation()
+                logger.info(f"Started new chat with {self.highlighted_model.name} via double-click")
+                
+                # Update status
+                self.status_bar.SetStatusText(f"New chat started with {self.highlighted_model.name}", 0)
+            else:
+                wx.MessageBox("Please select a model first.", "No Model Selected", wx.OK | wx.ICON_WARNING)
+                
+        except Exception as e:
+            logger.error(f"Error starting new chat via double-click: {e}")
             wx.MessageBox(f"Error starting new chat: {e}", "Error", wx.OK | wx.ICON_ERROR)
     
     def _refresh_model_running_status(self) -> None:
         """Refresh only the running status of models without full reload."""
         try:
-            # Get current running models
-            running_models = self.ollama_client.get_running_models()
-            
-            # Update the Running column for each item in the list
-            for i in range(self.model_list.GetItemCount()):
-                # Get the model name from column 1 (Name column)
-                model_name = self.model_list.GetItemText(i, 1)
-                
-                # Update the Running column (column 0)
-                running_str = "●" if model_name in running_models else ""
-                self.model_list.SetItem(i, 0, running_str)
-                
-            logger.info(f"Updated running status for {len(running_models)} running models")
+            # Delegate to models tab to refresh models (which includes running status)
+            if hasattr(self, 'models_tab'):
+                self.models_tab.refresh_models()
+                logger.info("Delegated model refresh to models tab")
             
         except Exception as e:
             logger.error(f"Error refreshing model running status: {e}")
@@ -1446,12 +1072,12 @@ Title:"""
         self.current_model = None
         
         # Disable action buttons
-        self.delete_btn.Enable(False)
+        self.models_delete_btn.Enable(False)
         
         # Clear details panels
-        self.overview_text.SetValue("No model selected.")
-        self.capabilities_text.SetValue("No model selected.")
-        self.modelfile_text.SetValue("No model selected.")
+        self.models_overview_text.SetValue("No model selected.")
+        self.models_capabilities_text.SetValue("No model selected.")
+        self.models_modelfile_text.SetValue("No model selected.")
         
         # Update status bar
         self.status_bar.SetStatusText("No model selected", 1)
@@ -1486,11 +1112,11 @@ Title:"""
         # Validate model name
         if not model_name or not model_name.strip():
             logger.warning("Cannot load modelfile: model name is empty")
-            self.modelfile_text.SetValue("Error: Model name is empty")
+            self.models_modelfile_text.SetValue("Error: Model name is empty")
             return
             
         # Show loading message
-        self.modelfile_text.SetValue("Loading modelfile...")
+        self.models_modelfile_text.SetValue("Loading modelfile...")
         
         def load_modelfile_worker():
             """Worker thread function to load modelfile."""
@@ -1499,12 +1125,12 @@ Title:"""
                 modelfile_content = self.ollama_client.get_modelfile(model_name)
                 
                 # Update GUI on main thread
-                wx.CallAfter(self.modelfile_text.SetValue, modelfile_content)
+                wx.CallAfter(self.models_modelfile_text.SetValue, modelfile_content)
                 
             except Exception as e:
                 logger.error(f"Error loading modelfile for {model_name}: {e}")
                 error_message = f"Error loading modelfile for {model_name}:\n{str(e)}"
-                wx.CallAfter(self.modelfile_text.SetValue, error_message)
+                wx.CallAfter(self.models_modelfile_text.SetValue, error_message)
         
         # Run in background thread to avoid blocking GUI
         threading.Thread(target=load_modelfile_worker, daemon=True).start()
@@ -1555,7 +1181,8 @@ Title:"""
         """Handle settings menu item."""
         try:
             # Get list of available model names for the dialog
-            model_names = [model.name for model in self.models] if self.models else []
+            models = self.cache_manager.get_models() if self.cache_manager else []
+            model_names = [model.name for model in models]
             
             # Create and show settings dialog
             dlg = SettingsDialog(self, self.config, model_names)
@@ -1693,27 +1320,11 @@ Title:"""
     def _select_default_model(self) -> None:
         """Select the configured default model if available."""
         try:
-            default_model_name = self.config.ui_preferences.default_model
-            if not default_model_name:
-                return
+            # Delegate to models tab to select the default model
+            if hasattr(self, 'models_tab'):
+                self.models_tab._select_default_model()
+                logger.info("Delegated default model selection to models tab")
                 
-            # Find the model in the list
-            for i in range(self.model_list.GetItemCount()):
-                item_name = self.model_list.GetItemText(i, 1)  # Name is in column 1
-                if item_name == default_model_name:
-                    # Select the model
-                    self.model_list.Select(i)
-                    self.model_list.EnsureVisible(i)
-                    
-                    # Find the model object and set it as current
-                    for model in self.models:
-                        if model.name == default_model_name:
-                            self.current_model = model
-                            self._update_model_details()
-                            self.status_bar.SetStatusText(f"Selected: {model.name}", 1)
-                            break
-                    break
-                    
         except Exception as e:
             logger.error(f"Error selecting default model: {e}")
     
@@ -1737,164 +1348,3 @@ Title:"""
         info.AddDeveloper("LlamaLot Development Team")
         
         wx.adv.AboutBox(info)
-
-    # Chat History Methods
-    def refresh_conversation_list(self) -> None:
-        """Refresh the conversation list from the database."""
-        try:
-            # Clear existing items
-            self.conversation_list.DeleteAllItems()
-            
-            # Get conversations from database - returns tuples of (conversation_id, title, updated_at)
-            conversations = self.db_manager.list_conversations(limit=100)
-            
-            # Store conversation IDs for lookup
-            self.conversation_ids = []
-            
-            # Populate the list
-            for i, (conv_id, title, updated_at) in enumerate(conversations):
-                # Use the actual title from database, or generate a fallback
-                display_title = title or f"Conversation {conv_id}"
-                index = self.conversation_list.InsertItem(i, display_title)
-                
-                # Store conversation ID in our lookup list
-                self.conversation_ids.append(conv_id)
-                
-                # Get full conversation to get model name and message count
-                full_conv = self.db_manager.get_conversation(conv_id)
-                if full_conv:
-                    self.conversation_list.SetItem(index, 1, full_conv.model_name or "Unknown")
-                    self.conversation_list.SetItem(index, 2, str(len(full_conv.messages)))
-                else:
-                    self.conversation_list.SetItem(index, 1, "Unknown")
-                    self.conversation_list.SetItem(index, 2, "0")
-                
-                # Format creation date
-                if updated_at:
-                    date_str = updated_at.strftime("%Y-%m-%d %H:%M")
-                    self.conversation_list.SetItem(index, 3, date_str)
-            
-            logger.info(f"Loaded {len(conversations)} conversations in history")
-            
-        except Exception as e:
-            logger.error(f"Error refreshing conversation list: {e}")
-            wx.MessageBox(f"Error loading conversation history: {e}", "Error", wx.OK | wx.ICON_ERROR)
-
-    def on_refresh_history(self, event: wx.CommandEvent) -> None:
-        """Handle refresh history button click."""
-        self.refresh_conversation_list()
-
-    def on_conversation_selected(self, event: wx.ListEvent) -> None:
-        """Handle conversation selection."""
-        try:
-            index = event.GetIndex()
-            
-            # Get conversation ID from our lookup list
-            if hasattr(self, 'conversation_ids') and 0 <= index < len(self.conversation_ids):
-                conv_id = self.conversation_ids[index]
-            else:
-                logger.error(f"Invalid conversation index: {index}")
-                return
-            
-            # Load and display the conversation
-            conversation = self.db_manager.get_conversation(conv_id)
-            if conversation:
-                self.display_conversation(conversation)
-                self.delete_conversation_btn.Enable(True)
-                # Store the current conversation ID for deletion
-                self.selected_conversation_id = conv_id
-            
-        except Exception as e:
-            logger.error(f"Error loading conversation: {e}")
-            wx.MessageBox(f"Error loading conversation: {e}", "Error", wx.OK | wx.ICON_ERROR)
-
-    def on_conversation_deselected(self, event: wx.ListEvent) -> None:
-        """Handle conversation deselection."""
-        self.conversation_display.SetValue("")
-        self.delete_conversation_btn.Enable(False)
-        self.selected_conversation_id = None
-
-    def on_delete_conversation(self, event: wx.CommandEvent) -> None:
-        """Handle delete conversation button click."""
-        try:
-            if not hasattr(self, 'selected_conversation_id') or not self.selected_conversation_id:
-                return
-                
-            conv_id = self.selected_conversation_id
-            selected = self.conversation_list.GetFirstSelected()
-            conv_title = self.conversation_list.GetItemText(selected) if selected != -1 else "Unknown"
-            
-            # Confirm deletion
-            dlg = wx.MessageDialog(
-                self,
-                f"Are you sure you want to delete the conversation '{conv_title}'?\n\nThis action cannot be undone.",
-                "Confirm Deletion",
-                wx.YES_NO | wx.NO_DEFAULT | wx.ICON_QUESTION
-            )
-            
-            if dlg.ShowModal() == wx.ID_YES:
-                # Delete from database
-                self.db_manager.delete_conversation(conv_id)
-                
-                # Refresh the list
-                self.refresh_conversation_list()
-                
-                # Clear the display
-                self.conversation_display.SetValue("")
-                self.delete_conversation_btn.Enable(False)
-                self.selected_conversation_id = None
-                
-                logger.info(f"Deleted conversation {conv_id}: {conv_title}")
-                
-            dlg.Destroy()
-            
-        except Exception as e:
-            logger.error(f"Error deleting conversation: {e}")
-            wx.MessageBox(f"Error deleting conversation: {e}", "Error", wx.OK | wx.ICON_ERROR)
-
-    def display_conversation(self, conversation: ChatConversation) -> None:
-        """Display a conversation in the viewer."""
-        try:
-            self.conversation_display.SetValue("")
-            
-            # Set up text styles
-            self.conversation_display.SetDefaultStyle(wx.TextAttr(wx.Colour(50, 50, 50)))
-            
-            # Add conversation header
-            header = f"Conversation: {conversation.title or f'ID {conversation.conversation_id}'}\n"
-            header += f"Model: {conversation.model_name}\n"
-            if conversation.created_at:
-                header += f"Created: {conversation.created_at.strftime('%Y-%m-%d %H:%M:%S')}\n"
-            header += f"Messages: {len(conversation.messages)}\n"
-            header += "=" * 50 + "\n\n"
-            
-            self.conversation_display.SetDefaultStyle(wx.TextAttr(wx.Colour(0, 0, 150), font=wx.Font(10, wx.FONTFAMILY_DEFAULT, wx.FONTSTYLE_NORMAL, wx.FONTWEIGHT_BOLD)))
-            self.conversation_display.AppendText(header)
-            
-            # Add messages
-            for i, message in enumerate(conversation.messages):
-                # Message header
-                if message.role == MessageRole.USER:
-                    self.conversation_display.SetDefaultStyle(wx.TextAttr(wx.Colour(0, 100, 0), font=wx.Font(10, wx.FONTFAMILY_DEFAULT, wx.FONTSTYLE_NORMAL, wx.FONTWEIGHT_BOLD)))
-                    self.conversation_display.AppendText("👤 User:\n")
-                elif message.role == MessageRole.ASSISTANT:
-                    self.conversation_display.SetDefaultStyle(wx.TextAttr(wx.Colour(150, 0, 0), font=wx.Font(10, wx.FONTFAMILY_DEFAULT, wx.FONTSTYLE_NORMAL, wx.FONTWEIGHT_BOLD)))
-                    self.conversation_display.AppendText("🤖 Assistant:\n")
-                else:
-                    self.conversation_display.SetDefaultStyle(wx.TextAttr(wx.Colour(100, 100, 100), font=wx.Font(10, wx.FONTFAMILY_DEFAULT, wx.FONTSTYLE_NORMAL, wx.FONTWEIGHT_BOLD)))
-                    self.conversation_display.AppendText(f"[{message.role.value}]:\n")
-                
-                # Message content
-                self.conversation_display.SetDefaultStyle(wx.TextAttr(wx.Colour(50, 50, 50)))
-                self.conversation_display.AppendText(f"{message.content}\n")
-                
-                # Add spacing between messages
-                if i < len(conversation.messages) - 1:
-                    self.conversation_display.AppendText("\n" + "-" * 40 + "\n\n")
-            
-            # Scroll to top
-            self.conversation_display.SetInsertionPoint(0)
-            
-        except Exception as e:
-            logger.error(f"Error displaying conversation: {e}")
-            self.conversation_display.SetValue(f"Error loading conversation: {e}")

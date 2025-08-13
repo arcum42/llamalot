@@ -7,6 +7,7 @@ and process them in batch to generate text descriptions saved alongside each ima
 
 import wx
 import os
+import subprocess
 import threading
 import asyncio
 from typing import List, Optional, Callable
@@ -78,14 +79,32 @@ class BatchProcessingPanel(wx.Panel):
         description.Wrap(600)
         main_sizer.Add(description, 0, wx.ALL | wx.ALIGN_CENTER, 5)
         
-        # Model selection section
-        self._create_model_selection(main_sizer)
+        # Create main content in two columns for better space utilization
+        content_sizer = wx.BoxSizer(wx.HORIZONTAL)
         
-        # Prompt input section
-        self._create_prompt_input(main_sizer)
+        # Left column: Model selection and prompt input
+        left_column = wx.BoxSizer(wx.VERTICAL)
         
-        # Image attachment section
-        self._create_image_section(main_sizer)
+        # Right column: File options and image controls
+        right_column = wx.BoxSizer(wx.VERTICAL)
+        
+        # Model selection section (left column)
+        self._create_model_selection(left_column)
+        
+        # Prompt input section (left column)
+        self._create_prompt_input(left_column)
+        
+        # File handling and suffix options (right column)
+        self._create_file_options(right_column)
+        
+        # Image attachment section (right column)
+        self._create_image_section(right_column)
+        
+        # Add columns to content sizer with proportions
+        content_sizer.Add(left_column, 2, wx.ALL | wx.EXPAND, 5)  # 2/3 width for left
+        content_sizer.Add(right_column, 1, wx.ALL | wx.EXPAND, 5)  # 1/3 width for right
+        
+        main_sizer.Add(content_sizer, 1, wx.ALL | wx.EXPAND, 0)
         
         # Processing controls
         self._create_processing_controls(main_sizer)
@@ -144,8 +163,22 @@ class BatchProcessingPanel(wx.Panel):
             value="Describe this image in detail."
         )
         
+        # Help text for wildcards
+        help_label = wx.StaticText(
+            self, 
+            label="Tip: Use %description% in your prompt to include existing text file content.\n" +
+                  "Example: \"Based on this existing description: %description%\nNow add more details about the colors.\"\n" +
+                  "Note: %description% uses the read suffix setting to find files."
+        )
+        help_label.SetForegroundColour(wx.Colour(100, 100, 100))  # Gray color
+        font = help_label.GetFont()
+        font.SetPointSize(font.GetPointSize() - 1)  # Slightly smaller font
+        help_label.SetFont(font)
+        help_label.Wrap(580)  # Wrap the text for better display
+        
         prompt_box.Add(prompt_label, 0, wx.ALL, 2)
         prompt_box.Add(self.prompt_text, 1, wx.ALL | wx.EXPAND, 2)
+        prompt_box.Add(help_label, 0, wx.ALL, 2)
         
         # Prefix text input
         prefix_label = wx.StaticText(self, label="Text prefix (optional - added before each description):")
@@ -163,60 +196,89 @@ class BatchProcessingPanel(wx.Panel):
         
         prompt_box.Add(options_label, 0, wx.ALL, 2)
         prompt_box.Add(self.overwrite_radio, 0, wx.LEFT | wx.RIGHT | wx.BOTTOM, 2)
-        prompt_box.Add(self.append_radio, 0, wx.LEFT | wx.RIGHT | wx.BOTTOM, 2)  # Reduced bottom margin
+        prompt_box.Add(self.append_radio, 0, wx.LEFT | wx.RIGHT | wx.BOTTOM, 2)
         
         parent_sizer.Add(prompt_box, 0, wx.ALL | wx.EXPAND, 3)
         
+    def _create_file_options(self, parent_sizer: wx.BoxSizer) -> None:
+        """Create the file handling and suffix options section."""
+        file_options_box = wx.StaticBoxSizer(wx.VERTICAL, self, "File Options")
+        
+        # File suffix options
+        suffix_label = wx.StaticText(self, label="File name suffixes (optional):")
+        
+        # Read suffix (for %description% wildcard)
+        read_suffix_sizer = wx.BoxSizer(wx.HORIZONTAL)
+        read_suffix_label = wx.StaticText(self, label="Read suffix:")
+        self.read_suffix_text = wx.TextCtrl(self, size=wx.Size(100, -1))
+        self.read_suffix_text.SetHint("e.g., _tags")
+        read_suffix_help = wx.StaticText(self, label="(for %description%)")
+        read_suffix_help.SetForegroundColour(wx.Colour(100, 100, 100))
+        
+        read_suffix_sizer.Add(read_suffix_label, 0, wx.ALL | wx.ALIGN_CENTER_VERTICAL, 2)
+        read_suffix_sizer.Add(self.read_suffix_text, 0, wx.ALL, 2)
+        read_suffix_sizer.Add(read_suffix_help, 0, wx.ALL | wx.ALIGN_CENTER_VERTICAL, 2)
+        
+        # Write suffix (for output files)
+        write_suffix_sizer = wx.BoxSizer(wx.HORIZONTAL)
+        write_suffix_label = wx.StaticText(self, label="Write suffix:")
+        self.write_suffix_text = wx.TextCtrl(self, size=wx.Size(100, -1))
+        self.write_suffix_text.SetHint("e.g., _desc")
+        write_suffix_help = wx.StaticText(self, label="(for output files)")
+        write_suffix_help.SetForegroundColour(wx.Colour(100, 100, 100))
+        
+        write_suffix_sizer.Add(write_suffix_label, 0, wx.ALL | wx.ALIGN_CENTER_VERTICAL, 2)
+        write_suffix_sizer.Add(self.write_suffix_text, 0, wx.ALL, 2)
+        write_suffix_sizer.Add(write_suffix_help, 0, wx.ALL | wx.ALIGN_CENTER_VERTICAL, 2)
+        
+        file_options_box.Add(suffix_label, 0, wx.ALL, 2)
+        file_options_box.Add(read_suffix_sizer, 0, wx.LEFT | wx.RIGHT, 2)
+        file_options_box.Add(write_suffix_sizer, 0, wx.LEFT | wx.RIGHT | wx.BOTTOM, 2)
+        
+        parent_sizer.Add(file_options_box, 0, wx.ALL | wx.EXPAND, 3)
+        
     def _create_image_section(self, parent_sizer: wx.BoxSizer) -> None:
-        """Create the image attachment section with simple layout."""
-        # Add minimal spacing to separate from above sections
-        parent_sizer.AddSpacer(5)
+        """Create the image attachment section with compact layout."""
+        # Image section in a static box for better organization
+        image_box = wx.StaticBoxSizer(wx.VERTICAL, self, "Images to Process")
         
-        # Simple title label with clear spacing
-        title_label = wx.StaticText(self, label="Images to Process")
-        title_font = title_label.GetFont()
-        title_font.PointSize += 2  # Make it bigger to be more visible
-        title_font = title_font.Bold()
-        title_label.SetFont(title_font)
-        # Make sure the label can expand and has enough space
-        title_label.SetMinSize(wx.Size(200, -1))  # Ensure minimum width
-        parent_sizer.Add(title_label, 0, wx.LEFT | wx.RIGHT | wx.BOTTOM | wx.EXPAND, 3)  # Allow expansion
-        
-        # Add images button and controls
+        # Add images button and controls in a compact horizontal layout
         controls_sizer = wx.BoxSizer(wx.HORIZONTAL)
         
-        add_images_btn = wx.Button(self, label="📎 Add Images", size=wx.Size(120, 30))
+        add_images_btn = wx.Button(self, label="📎 Add", size=wx.Size(80, 30))
         add_images_btn.Bind(wx.EVT_BUTTON, self._on_add_images)
-        controls_sizer.Add(add_images_btn, 0, wx.ALL, 3)
+        controls_sizer.Add(add_images_btn, 0, wx.ALL, 2)
         
         # Delete selected button
-        self.delete_selected_btn = wx.Button(self, label="🗑️ Delete Selected", size=wx.Size(130, 30))
+        self.delete_selected_btn = wx.Button(self, label="🗑️ Del", size=wx.Size(60, 30))
         self.delete_selected_btn.Bind(wx.EVT_BUTTON, self._on_delete_selected)
         self.delete_selected_btn.Enable(False)
-        controls_sizer.Add(self.delete_selected_btn, 0, wx.ALL, 3)
+        controls_sizer.Add(self.delete_selected_btn, 0, wx.ALL, 2)
         
         # Clear all button
-        self.clear_all_btn = wx.Button(self, label="🗑️ Clear All", size=wx.Size(100, 30))
+        self.clear_all_btn = wx.Button(self, label="Clear", size=wx.Size(60, 30))
         self.clear_all_btn.Bind(wx.EVT_BUTTON, self._on_clear_all)
         self.clear_all_btn.Enable(False)
-        controls_sizer.Add(self.clear_all_btn, 0, wx.ALL, 3)
+        controls_sizer.Add(self.clear_all_btn, 0, wx.ALL, 2)
         
-        parent_sizer.Add(controls_sizer, 0, wx.LEFT | wx.RIGHT | wx.BOTTOM, 3)
+        image_box.Add(controls_sizer, 0, wx.ALL, 2)
         
-        # Images display area
+        # Images display area (more compact)
         self.images_scroll = wx.ScrolledWindow(self)
         self.images_scroll.SetScrollRate(5, 5)
-        self.images_scroll.SetMinSize(wx.Size(400, 150))
+        self.images_scroll.SetMinSize(wx.Size(250, 120))  # Smaller but still functional
         
         self.images_sizer = wx.BoxSizer(wx.HORIZONTAL)
         self.images_scroll.SetSizer(self.images_sizer)
         
         # No images label
-        self.no_images_label = wx.StaticText(self.images_scroll, label="No images attached. Click 'Add Images' to select files.")
+        self.no_images_label = wx.StaticText(self.images_scroll, label="No images attached.\nClick 'Add' to select files.")
         self.no_images_label.SetForegroundColour(wx.Colour(128, 128, 128))
         self.images_sizer.Add(self.no_images_label, 0, wx.ALL | wx.ALIGN_CENTER, 5)
         
-        parent_sizer.Add(self.images_scroll, 1, wx.ALL | wx.EXPAND, 3)
+        image_box.Add(self.images_scroll, 1, wx.ALL | wx.EXPAND, 2)
+        
+        parent_sizer.Add(image_box, 1, wx.ALL | wx.EXPAND, 3)
         
     def _create_processing_controls(self, parent_sizer: wx.BoxSizer) -> None:
         """Create the processing control buttons."""
@@ -283,7 +345,9 @@ class BatchProcessingPanel(wx.Panel):
         self.Bind(wx.EVT_BUTTON, self._on_start_processing, self.process_btn)
         self.Bind(wx.EVT_BUTTON, self._on_stop_processing, self.stop_btn)
         self.Bind(wx.EVT_TEXT, self._on_prompt_changed, self.prompt_text)
-        self.Bind(wx.EVT_LEFT_DCLICK, self._on_results_double_click, self.results_text)
+        
+        # Bind double-click event to the results text control
+        self.results_text.Bind(wx.EVT_LEFT_DCLICK, self._on_results_double_click)
         
     def _load_vision_models(self) -> None:
         """Load available vision models."""
@@ -473,6 +537,21 @@ class BatchProcessingPanel(wx.Panel):
         if not prompt:
             wx.MessageBox("Please enter a prompt", "No Prompt", wx.OK | wx.ICON_WARNING)
             return
+        
+        # Validate that the selected model has vision capabilities
+        if 'vision' not in self.selected_model.capabilities:
+            wx.MessageBox(
+                f"The selected model '{self.selected_model.name}' does not support vision/image processing.\n\n"
+                f"Please select a vision model such as:\n"
+                f"• llava:7b\n"
+                f"• llava-llama3:8b\n"
+                f"• llama3.2-vision:latest\n"
+                f"• bakllava:latest\n\n"
+                f"Current model capabilities: {', '.join(self.selected_model.capabilities)}",
+                "Vision Model Required",
+                wx.OK | wx.ICON_ERROR
+            )
+            return
             
         # Start processing in background thread
         self.is_processing = True
@@ -500,41 +579,76 @@ class BatchProcessingPanel(wx.Panel):
     def _on_results_double_click(self, event: wx.MouseEvent) -> None:
         """Handle double-click on results text to open file."""
         try:
-            # Get the line that was clicked
+            # Get the text position from the mouse event
             pos = event.GetPosition()
-            hit_pos = self.results_text.HitTestPos(pos)
-            if hit_pos[0] == wx.TE_HT_UNKNOWN:
+            
+            # Convert mouse position to text position
+            hit_test_result = self.results_text.HitTest(pos)
+            if hit_test_result[0] == wx.TE_HT_UNKNOWN:
+                logger.debug("Double-click hit test failed")
                 return
                 
-            text_pos = hit_pos[1]
-            line_start = self.results_text.GetLineLength(0)
+            text_pos = hit_test_result[1]
             
-            # Find which line was clicked
-            line_num = 0
-            current_pos = 0
+            # Get the text and find which line was clicked
             text_value = self.results_text.GetValue()
+            if not text_value:
+                return
+                
             lines = text_value.split('\n')
             
+            # Calculate which line the click position is on
+            current_pos = 0
+            line_num = 0
+            
             for i, line in enumerate(lines):
-                if current_pos <= text_pos <= current_pos + len(line):
+                line_end = current_pos + len(line)
+                if current_pos <= text_pos <= line_end:
                     line_num = i
                     break
-                current_pos += len(line) + 1  # +1 for newline
+                current_pos = line_end + 1  # +1 for newline character
             
-            # Check if this line contains a file path
+            if line_num >= len(lines):
+                return
+                
+            line_text = lines[line_num]
+            logger.debug(f"Double-clicked on line {line_num}: {line_text}")
+            
+            # Check if this line contains a file path and try to open it
+            file_path = None
+            
+            # First check our tracked file paths
             if line_num in self.result_file_paths:
                 file_path = self.result_file_paths[line_num]
+                logger.debug(f"Found tracked file path: {file_path}")
+            
+            # If no tracked path, try to extract from "Saved to:" text
+            elif "Saved to:" in line_text:
+                saved_to_index = line_text.find("Saved to:")
+                if saved_to_index != -1:
+                    file_path = line_text[saved_to_index + 9:].strip()
+                    logger.debug(f"Extracted file path from text: {file_path}")
+            
+            # Try to open the file if we found a path
+            if file_path:
                 if os.path.exists(file_path):
-                    # Open the file with the default system application
-                    if os.name == 'nt':  # Windows
-                        os.startfile(file_path)
-                    elif os.name == 'posix':  # Linux/Mac
-                        os.system(f'xdg-open "{file_path}"')
+                    logger.info(f"Opening file: {file_path}")
+                    try:
+                        if os.name == 'nt':  # Windows
+                            os.startfile(file_path)
+                        else:  # Linux/Mac/Unix
+                            subprocess.run(['xdg-open', file_path], check=False)
+                    except Exception as e:
+                        logger.error(f"Failed to open file {file_path}: {e}")
+                        wx.MessageBox(f"Failed to open file: {e}", "Error", wx.OK | wx.ICON_ERROR)
                 else:
-                    wx.MessageBox(f"File not found: {file_path}", "Error", wx.OK | wx.ICON_ERROR)
+                    logger.warning(f"File not found: {file_path}")
+                    wx.MessageBox(f"File not found: {file_path}", "File Not Found", wx.OK | wx.ICON_WARNING)
+            else:
+                logger.debug(f"No file path found in line: {line_text}")
                     
         except Exception as e:
-            logger.error(f"Error opening file: {e}")
+            logger.error(f"Error in double-click handler: {e}")
         
     def _process_images_batch(self, model: OllamaModel, prompt: str, images: List[ChatImage]) -> None:
         """Process images in batch (runs in background thread)."""
@@ -596,16 +710,61 @@ class BatchProcessingPanel(wx.Panel):
     def _generate_description(self, model: OllamaModel, prompt: str, image: ChatImage) -> str:
         """Generate description for a single image."""
         try:
+            # Process wildcards in the prompt
+            processed_prompt = self._process_prompt_wildcards(prompt, image)
+            
             # Use the Ollama client to generate a response
             response = self.ollama_client.chat_with_image(
                 model_name=model.name,
-                prompt=prompt,
+                prompt=processed_prompt,
                 image=image
             )
             return response.strip()
             
         except Exception as e:
             raise Exception(f"Failed to generate description: {e}")
+
+    def _process_prompt_wildcards(self, prompt: str, image: ChatImage) -> str:
+        """
+        Process wildcards in the prompt, substituting them with content from existing files.
+        
+        Supported wildcards:
+        - %description% : Content of the existing text file for this image (or empty if doesn't exist)
+        
+        Args:
+            prompt: The original prompt text that may contain wildcards
+            image: The ChatImage object for the current image being processed
+            
+        Returns:
+            The prompt with wildcards replaced by appropriate content
+        """
+        processed_prompt = prompt
+        
+        # Handle %description% wildcard
+        if '%description%' in processed_prompt:
+            try:
+                # Get the path to the text file for this image (using read suffix if specified)
+                text_file_path = self._get_read_filename(image)
+                
+                if os.path.exists(text_file_path):
+                    # Read existing content
+                    with open(text_file_path, 'r', encoding='utf-8') as f:
+                        existing_content = f.read().strip()
+                    logger.info(f"Substituting %description% with content from {text_file_path}")
+                else:
+                    # File doesn't exist, substitute with empty string
+                    existing_content = ""
+                    logger.info(f"No existing file at {text_file_path}, substituting %description% with empty string")
+                
+                # Replace the wildcard
+                processed_prompt = processed_prompt.replace('%description%', existing_content)
+                
+            except Exception as e:
+                logger.warning(f"Error processing %description% wildcard: {e}")
+                # On error, just replace with empty string
+                processed_prompt = processed_prompt.replace('%description%', "")
+        
+        return processed_prompt
             
     def _save_description(self, image: ChatImage, description: str) -> None:
         """Save description to text file next to the image."""
@@ -635,16 +794,66 @@ class BatchProcessingPanel(wx.Panel):
             raise Exception(f"Failed to save description: {e}")
             
     def _get_output_filename(self, image: ChatImage) -> str:
-        """Get the output text filename for an image."""
+        """Get the output text filename for an image with optional write suffix."""
+        write_suffix = self.write_suffix_text.GetValue().strip()
+        
         if image.source_path:
             # Use the original file path, change extension to .txt
             path = Path(image.source_path)
-            return str(path.with_suffix('.txt'))
+            base_name = path.stem
+            
+            # Add write suffix if provided
+            if write_suffix:
+                # Ensure suffix starts with underscore if it doesn't already
+                if not write_suffix.startswith('_'):
+                    write_suffix = '_' + write_suffix
+                base_name += write_suffix
+            
+            return str(path.parent / f"{base_name}.txt")
         else:
             # Fallback: save in current directory
             filename = image.filename or "unknown"
-            name_without_ext = Path(filename).stem
-            return f"{name_without_ext}.txt"
+            base_name = Path(filename).stem
+            
+            # Add write suffix if provided
+            if write_suffix:
+                # Ensure suffix starts with underscore if it doesn't already
+                if not write_suffix.startswith('_'):
+                    write_suffix = '_' + write_suffix
+                base_name += write_suffix
+            
+            return f"{base_name}.txt"
+    
+    def _get_read_filename(self, image: ChatImage) -> str:
+        """Get the read text filename for an image with optional read suffix."""
+        read_suffix = self.read_suffix_text.GetValue().strip()
+        
+        if image.source_path:
+            # Use the original file path, change extension to .txt
+            path = Path(image.source_path)
+            base_name = path.stem
+            
+            # Add read suffix if provided
+            if read_suffix:
+                # Ensure suffix starts with underscore if it doesn't already
+                if not read_suffix.startswith('_'):
+                    read_suffix = '_' + read_suffix
+                base_name += read_suffix
+            
+            return str(path.parent / f"{base_name}.txt")
+        else:
+            # Fallback: check current directory
+            filename = image.filename or "unknown"
+            base_name = Path(filename).stem
+            
+            # Add read suffix if provided
+            if read_suffix:
+                # Ensure suffix starts with underscore if it doesn't already
+                if not read_suffix.startswith('_'):
+                    read_suffix = '_' + read_suffix
+                base_name += read_suffix
+            
+            return f"{base_name}.txt"
             
     def _append_result_with_file_path(self, message: str, file_path: Optional[str]) -> None:
         """Append a result message and track file path for double-click functionality."""

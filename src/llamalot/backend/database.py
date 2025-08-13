@@ -39,7 +39,7 @@ class DatabaseManager:
     """
     
     # Current database schema version
-    SCHEMA_VERSION = 2  # Added capabilities column
+    SCHEMA_VERSION = 4  # Fixed foreign key reference in messages table
     
     def __init__(self, db_path: Path):
         """
@@ -167,6 +167,14 @@ class DatabaseManager:
                 if from_version == 1:
                     self._migrate_v1_to_v2(conn)
                 
+                # Migration from v2 to v3: Remove foreign key constraint on model_name in conversations
+                if from_version == 2:
+                    self._migrate_v2_to_v3(conn)
+                
+                # Migration from v3 to v4: Fix foreign key reference in messages table
+                if from_version == 3:
+                    self._migrate_v3_to_v4(conn)
+                
                 self._set_schema_version(self.SCHEMA_VERSION)
                 logger.info(f"Database migration completed successfully")
                 
@@ -182,6 +190,96 @@ class DatabaseManager:
         conn.execute("ALTER TABLE models ADD COLUMN capabilities TEXT")
         
         logger.info("Successfully added capabilities column to models table")
+    
+    def _migrate_v2_to_v3(self, conn: sqlite3.Connection) -> None:
+        """Migrate database from version 2 to version 3."""
+        logger.info("Migrating database from v2 to v3: Removing foreign key constraint on conversations.model_name")
+        
+        # SQLite doesn't support dropping foreign key constraints directly
+        # We need to recreate the conversations table without the foreign key constraint
+        
+        # Step 1: Rename the current table
+        conn.execute("ALTER TABLE conversations RENAME TO conversations_old")
+        
+        # Step 2: Create new conversations table without foreign key constraint
+        conn.execute("""
+            CREATE TABLE conversations (
+                conversation_id TEXT PRIMARY KEY,
+                title TEXT NOT NULL,
+                model_name TEXT,
+                system_prompt TEXT,
+                total_tokens INTEGER DEFAULT 0,
+                total_time REAL DEFAULT 0.0,
+                message_count INTEGER DEFAULT 0,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        
+        # Step 3: Copy data from old table to new table
+        conn.execute("""
+            INSERT INTO conversations 
+            SELECT * FROM conversations_old
+        """)
+        
+        # Step 4: Drop the old table
+        conn.execute("DROP TABLE conversations_old")
+        
+        # Step 5: Recreate indexes
+        conn.execute("CREATE INDEX idx_conversations_updated ON conversations(updated_at)")
+        
+        logger.info("Successfully removed foreign key constraint from conversations table")
+    
+    def _migrate_v3_to_v4(self, conn: sqlite3.Connection) -> None:
+        """Migrate database from version 3 to version 4."""
+        logger.info("Migrating database from v3 to v4: Fixing foreign key reference in messages table")
+        
+        # The messages table still references 'conversations_old' instead of 'conversations'
+        # We need to recreate the messages table with the correct foreign key reference
+        
+        # Step 1: Rename the current messages table
+        conn.execute("ALTER TABLE messages RENAME TO messages_old")
+        
+        # Step 2: Create new messages table with correct foreign key reference
+        conn.execute("""
+            CREATE TABLE messages (
+                message_id TEXT PRIMARY KEY,
+                conversation_id TEXT NOT NULL,
+                role TEXT NOT NULL,
+                content TEXT NOT NULL,
+                
+                -- Metadata
+                model_name TEXT,
+                tokens_used INTEGER,
+                generation_time REAL,
+                timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                
+                -- Error information
+                error TEXT,
+                is_error BOOLEAN DEFAULT 0,
+                
+                -- Message order in conversation
+                sequence_number INTEGER NOT NULL,
+                
+                FOREIGN KEY (conversation_id) REFERENCES conversations(conversation_id) ON DELETE CASCADE
+            )
+        """)
+        
+        # Step 3: Copy data from old table to new table
+        conn.execute("""
+            INSERT INTO messages 
+            SELECT * FROM messages_old
+        """)
+        
+        # Step 4: Drop the old table
+        conn.execute("DROP TABLE messages_old")
+        
+        # Step 5: Recreate indexes
+        conn.execute("CREATE INDEX idx_messages_conversation ON messages(conversation_id)")
+        conn.execute("CREATE INDEX idx_messages_timestamp ON messages(timestamp)")
+        conn.execute("CREATE INDEX idx_messages_sequence ON messages(conversation_id, sequence_number)")
+        
+        logger.info("Successfully fixed foreign key reference in messages table")
     
     def _create_initial_schema(self, conn: sqlite3.Connection) -> None:
         """Create the initial database schema."""
@@ -234,9 +332,7 @@ class DatabaseManager:
                 
                 -- Timestamps
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                
-                FOREIGN KEY (model_name) REFERENCES models(name) ON DELETE SET NULL
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         """)
         
@@ -261,8 +357,7 @@ class DatabaseManager:
                 -- Message order in conversation
                 sequence_number INTEGER NOT NULL,
                 
-                FOREIGN KEY (conversation_id) REFERENCES conversations(conversation_id) ON DELETE CASCADE,
-                FOREIGN KEY (model_name) REFERENCES models(name) ON DELETE SET NULL
+                FOREIGN KEY (conversation_id) REFERENCES conversations(conversation_id) ON DELETE CASCADE
             )
         """)
         
@@ -650,6 +745,27 @@ class DatabaseManager:
         
         return deleted
     
+    def clear_all_conversations(self) -> int:
+        """
+        Clear all conversations and messages from the database.
+        
+        Returns:
+            Number of conversations deleted
+        """
+        with self.transaction() as conn:
+            # Count conversations before deletion
+            cursor = conn.execute("SELECT COUNT(*) FROM conversations")
+            count = cursor.fetchone()[0]
+            
+            # Delete all messages first (due to foreign key constraints)
+            conn.execute("DELETE FROM messages")
+            
+            # Delete all conversations
+            conn.execute("DELETE FROM conversations")
+        
+        logger.info(f"Cleared all conversation history: {count} conversations deleted")
+        return count
+    
     def _save_message(self, conn: sqlite3.Connection, message: ChatMessage, conversation_id: str, sequence: int) -> None:
         """Save a message to the database."""
         message_id = message.message_id or f"{conversation_id}_msg_{sequence}"
@@ -882,15 +998,28 @@ class DatabaseManager:
     def close(self) -> None:
         """Close all database connections."""
         with self._lock:
-            # Close all connections in the pool
-            for conn in self._connection_pool.values():
+            # Close all connections in the pool, handling thread safety
+            current_thread_id = threading.get_ident()
+            closed_count = 0
+            skipped_count = 0
+            
+            for thread_id, conn in list(self._connection_pool.items()):
                 try:
-                    conn.close()
+                    if thread_id == current_thread_id:
+                        # Only close connections created in the current thread
+                        conn.close()
+                        closed_count += 1
+                        logger.debug(f"Closed database connection for current thread {thread_id}")
+                    else:
+                        # Skip connections from other threads - they'll be cleaned up automatically
+                        skipped_count += 1
+                        logger.debug(f"Skipped closing connection from different thread {thread_id}")
                 except Exception as e:
-                    logger.warning(f"Error closing connection: {e}")
+                    logger.debug(f"Error closing connection for thread {thread_id}: {e}")
+                    
             self._connection_pool.clear()
         
-        logger.info("Database connections closed")
+        logger.info(f"Database connections closed: {closed_count} closed, {skipped_count} skipped (different threads)")
     
     def __enter__(self):
         """Context manager entry."""

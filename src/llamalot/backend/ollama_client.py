@@ -780,7 +780,16 @@ class OllamaClient:
             OllamaModelNotFoundError: If model doesn't exist
             OllamaConnectionError: If chat fails
         """
+        # Set up extended timeout for vision models at the start
+        # Use minimum 180 seconds for large models (12B+ parameters) to handle server load
+        vision_timeout = max(180, self.config.timeout * 4)  # At least 180 seconds or 4x normal timeout
+        
         try:
+            logger.info(f"Starting chat_with_image with model: {model_name}")
+            logger.debug(f"Prompt length: {len(prompt)} characters")
+            logger.debug(f"Image filename: {getattr(image, 'filename', 'unknown')}")
+            logger.debug(f"Image size: {getattr(image, 'size_human_readable', 'unknown')}")
+            
             # Create the message with image for the API
             messages = [
                 {
@@ -790,17 +799,47 @@ class OllamaClient:
                 }
             ]
             
-            # Call Ollama API directly
-            response = self.client.chat(
+            logger.debug(f"Sending request to Ollama with {len(messages)} messages")
+            
+            # Create a temporary client with longer timeout for vision models
+            # Vision models typically need more time to process images
+            vision_client = Client(host=self.config.base_url, timeout=vision_timeout)
+            
+            logger.info(f"Using extended timeout of {vision_timeout}s for vision model (model: {model_name})")
+            
+            # Call Ollama API with the extended timeout client
+            response = vision_client.chat(
                 model=model_name,
                 messages=messages
             )
             
-            return response['message']['content']
+            logger.info(f"Successfully received response from {model_name}")
+            response_content = response['message']['content']
+            logger.debug(f"Response length: {len(response_content)} characters")
             
+            return response_content
+            
+        except ResponseError as e:
+            logger.error(f"Ollama ResponseError in chat_with_image: {e}")
+            if "not found" in str(e).lower():
+                raise OllamaModelNotFoundError(f"Model '{model_name}' not found")
+            else:
+                raise OllamaConnectionError(f"Failed to chat with image: {e}") from e
+        except requests.exceptions.Timeout as e:
+            logger.error(f"Request timeout in chat_with_image after {vision_timeout}s: {e}")
+            logger.error(f"Model '{model_name}' may require more processing time for large images or during server load")
+            raise OllamaConnectionError(f"Request timed out after {vision_timeout}s - try again or use a smaller/faster model") from e
+        except requests.exceptions.ConnectionError as e:
+            logger.error(f"Connection error in chat_with_image: {e}")
+            raise OllamaConnectionError(f"Failed to connect to Ollama server: {e}") from e
         except Exception as e:
-            logger.error(f"Error in chat_with_image: {e}")
-            raise OllamaConnectionError(f"Failed to chat with image: {e}") from e
+            logger.error(f"Unexpected error in chat_with_image: {e}")
+            logger.error(f"Error type: {type(e).__name__}")
+            # Provide more context for common issues
+            if "500" in str(e) and "image" in str(e).lower():
+                raise OllamaConnectionError(f"Server error processing image with {model_name}: {e}") from e
+            else:
+                raise OllamaConnectionError(f"Failed to chat with image: {e}") from e
 
     def get_embedding_models(self) -> List[str]:
         """

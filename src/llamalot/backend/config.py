@@ -165,6 +165,24 @@ class ConfigurationManager:
             else:
                 logger.warning(f"Unknown chat default: {key}")
     
+    def update_embeddings_config(self, **kwargs) -> None:
+        """
+        Update embeddings configuration settings.
+        
+        Args:
+            **kwargs: Embeddings config fields to update
+        """
+        config = self.config
+        embeddings_config = config.embeddings
+        
+        # Update provided fields
+        for key, value in kwargs.items():
+            if hasattr(embeddings_config, key):
+                setattr(embeddings_config, key, value)
+                logger.debug(f"Updated embeddings config {key} = {value}")
+            else:
+                logger.warning(f"Unknown embeddings config: {key}")
+    
     def mark_first_run_complete(self) -> None:
         """Mark that the first run setup is complete."""
         config = self.config
@@ -323,6 +341,25 @@ class ConfigurationManager:
         
         if not (0.0 <= config.chat_defaults.top_p <= 1.0):
             results['warnings'].append(f"Top-p outside valid range: {config.chat_defaults.top_p}")
+        
+        # Check embeddings configuration
+        if config.embeddings.chunk_size < 100:
+            results['warnings'].append("Embeddings chunk size is very small")
+        
+        if config.embeddings.chunk_size > 10000:
+            results['warnings'].append("Embeddings chunk size is very large")
+        
+        if not (0.0 <= config.embeddings.similarity_threshold <= 1.0):
+            results['warnings'].append(f"Similarity threshold outside valid range: {config.embeddings.similarity_threshold}")
+        
+        if config.embeddings.search_results_limit < 1:
+            results['warnings'].append("Search results limit should be at least 1")
+        
+        # Check embeddings persist directory
+        if config.embeddings.persist_directory:
+            persist_dir = Path(config.embeddings.persist_directory)
+            if not persist_dir.exists():
+                results['warnings'].append(f"Embeddings persist directory does not exist: {persist_dir}")
         
         logger.debug(f"Configuration validation: {len(results['errors'])} errors, {len(results['warnings'])} warnings")
         return results

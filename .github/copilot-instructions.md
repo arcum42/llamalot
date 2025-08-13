@@ -71,6 +71,13 @@ src/llamalot/
 - Include contextual information in log messages
 - Implement proper exception handling with user-friendly error messages
 
+### File Editing and Text Encoding
+- **AVOID unicode characters, emojis, and special symbols in code when using automated editing tools**
+- **Use ASCII-safe text for button labels, comments, and strings during automated edits**
+- **If unicode/emoji is needed, implement it manually or use terminal commands**
+- Text encoding issues with automated tools can cause file corruption and unexpected behavior
+- Prefer plain text labels like "Raw Text" over emoji symbols like "📝 MD"
+
 ## Critical Implementation Guidelines
 
 ### Model Capability Detection
