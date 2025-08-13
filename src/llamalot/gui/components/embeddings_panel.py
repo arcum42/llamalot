@@ -148,24 +148,6 @@ class EmbeddingsPanel(wx.lib.scrolledpanel.ScrolledPanel):
         self.search_results_list.AppendColumn("Content Preview", width=400)
         self.search_results_list.AppendColumn("Metadata", width=200)
         
-        # === Chat Integration Section ===
-        chat_box = wx.StaticBox(self, label="Chat Integration")
-        self.chat_sizer = wx.StaticBoxSizer(chat_box, wx.VERTICAL)
-        
-        # Chat controls
-        self.chat_ctrl_sizer = wx.BoxSizer(wx.HORIZONTAL)
-        
-        self.chk_enable_rag = wx.CheckBox(self, label="Enable RAG in Chat")
-        self.chat_ctrl_sizer.Add(self.chk_enable_rag, 0, wx.ALIGN_CENTER_VERTICAL | wx.RIGHT, 10)
-        
-        self.chat_ctrl_sizer.Add(wx.StaticText(self, label="Active Collections:"), 0, wx.ALIGN_CENTER_VERTICAL | wx.RIGHT, 5)
-        
-        self.active_collections = wx.ListBox(self, style=wx.LB_MULTIPLE)
-        self.chat_ctrl_sizer.Add(self.active_collections, 1, wx.RIGHT, 5)
-        
-        self.btn_apply_chat_settings = wx.Button(self, label="Apply to Chat")
-        self.chat_ctrl_sizer.Add(self.btn_apply_chat_settings, 0)
-        
         # === Status Bar ===
         self.status_text = wx.StaticText(self, label="Ready")
         
@@ -196,10 +178,6 @@ class EmbeddingsPanel(wx.lib.scrolledpanel.ScrolledPanel):
         self.search_sizer.Add(self.search_results_list, 1, wx.EXPAND | wx.ALL, 5)
         main_sizer.Add(self.search_sizer, 1, wx.EXPAND | wx.LEFT | wx.RIGHT | wx.BOTTOM, 5)
         
-        # Chat integration section
-        self.chat_sizer.Add(self.chat_ctrl_sizer, 0, wx.EXPAND | wx.ALL, 5)
-        main_sizer.Add(self.chat_sizer, 0, wx.EXPAND | wx.LEFT | wx.RIGHT | wx.BOTTOM, 5)
-        
         # Status bar
         main_sizer.Add(self.status_text, 0, wx.EXPAND | wx.ALL, 5)
         
@@ -227,9 +205,6 @@ class EmbeddingsPanel(wx.lib.scrolledpanel.ScrolledPanel):
         self.Bind(wx.EVT_BUTTON, self._on_search, self.btn_search)
         self.Bind(wx.EVT_TEXT_ENTER, self._on_search, self.search_text)
         self.Bind(wx.EVT_LIST_ITEM_SELECTED, self._on_search_result_selected, self.search_results_list)
-        
-        # Chat events
-        self.Bind(wx.EVT_BUTTON, self._on_apply_chat_settings, self.btn_apply_chat_settings)
     
     def _update_ui_state(self):
         """Update UI state based on current selection."""
@@ -270,10 +245,6 @@ class EmbeddingsPanel(wx.lib.scrolledpanel.ScrolledPanel):
                 index = self.collections_list.InsertItem(i, collection_name)
                 self.collections_list.SetItem(index, 1, str(stats.get('document_count', 0)))
                 self.collections_list.SetItem(index, 2, stats.get('description', ''))
-            
-            # Update active collections list for chat
-            self.active_collections.Clear()
-            self.active_collections.AppendItems(collections)
             
             logger.info(f"Refreshed collections list: {len(collections)} collections")
             
@@ -546,89 +517,4 @@ class EmbeddingsPanel(wx.lib.scrolledpanel.ScrolledPanel):
             result = self.search_results[selection]
             # Could show document details in a separate panel or dialog
             logger.info(f"Selected search result: {result.document.id}")
-    
-    def _on_apply_chat_settings(self, event):
-        """Handle applying chat settings."""
-        selected_collections = self.active_collections.GetSelections()
-        collection_names = [self.active_collections.GetString(i) for i in selected_collections]
-        rag_enabled = self.chk_enable_rag.GetValue()
-        
-        # Store settings in configuration
-        try:
-            config = self.config_manager.config
-            config.embeddings.rag_enabled = rag_enabled
-            config.embeddings.active_collections = collection_names
-            self.config_manager.save()
-            
-            wx.MessageBox(
-                f"Chat settings applied!\nRAG enabled: {rag_enabled}\nActive collections: {len(collection_names)}",
-                "Settings Applied",
-                wx.OK | wx.ICON_INFORMATION
-            )
-            
-            # Notify parent window about chat settings change
-            event = wx.PyCommandEvent(wx.EVT_MENU.typeId, self.GetId())
-            event.SetString("embeddings_settings_changed")
-            wx.PostEvent(self.GetParent(), event)
-            
-        except Exception as e:
-            logger.error(f"Error applying chat settings: {e}")
-            wx.MessageBox(f"Error applying chat settings: {e}", "Error", wx.OK | wx.ICON_ERROR)
-    
-    def get_active_collections(self) -> List[str]:
-        """
-        Get currently active collections for chat integration.
-        
-        Returns:
-            List of active collection names
-        """
-        if not self.chk_enable_rag.GetValue():
-            return []
-        
-        selected_collections = self.active_collections.GetSelections()
-        return [self.active_collections.GetString(i) for i in selected_collections]
-    
-    def is_rag_enabled(self) -> bool:
-        """
-        Check if RAG is currently enabled.
-        
-        Returns:
-            True if RAG is enabled for chat
-        """
-        return self.chk_enable_rag.GetValue()
-    
-    def search_for_context(self, query: str, max_results: int = 3) -> List[SearchResult]:
-        """
-        Search for context across active collections for chat integration.
-        
-        Args:
-            query: Search query
-            max_results: Maximum number of results to return
-            
-        Returns:
-            List of search results for context
-        """
-        if not self.is_rag_enabled():
-            return []
-        
-        active_collections = self.get_active_collections()
-        if not active_collections:
-            return []
-        
-        all_results = []
-        
-        for collection_name in active_collections:
-            try:
-                results = self.embeddings_manager.search_similar(
-                    collection_name,
-                    query,
-                    n_results=max_results
-                )
-                all_results.extend(results)
-                
-            except Exception as e:
-                logger.error(f"Error searching collection {collection_name}: {e}")
-        
-        # Sort by score and limit results
-        all_results.sort(key=lambda x: x.score, reverse=True)
-        return all_results[:max_results]
+

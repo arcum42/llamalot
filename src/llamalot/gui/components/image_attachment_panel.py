@@ -75,6 +75,8 @@ class ImageAttachmentPanel(wx.Panel):
         
         # Hide collapsible pane initially
         self.image_collapsible.Hide()
+        # Also ensure it starts collapsed when shown
+        self.image_collapsible.Collapse()
         
         main_sizer.Add(self.image_collapsible, 1, wx.EXPAND)
         self.SetSizer(main_sizer)
@@ -129,8 +131,7 @@ class ImageAttachmentPanel(wx.Panel):
         """Show or hide the image attachment panel."""
         if show:
             self.image_collapsible.Show()
-            if not self.image_collapsible.IsExpanded():
-                self.image_collapsible.Expand()
+            # Keep collapsed by default - user can expand when needed
         else:
             self.image_collapsible.Hide()
         self.GetParent().Layout()

@@ -19,6 +19,7 @@ from logging import getLogger
 from llamalot.models.chat import ChatConversation, ChatMessage, MessageRole, ChatImage
 from llamalot.models.ollama_model import OllamaModel
 from llamalot.gui.components.image_attachment_panel import ImageAttachmentPanel
+from llamalot.gui.components.embeddings_chat_panel import EmbeddingsChatPanel
 
 logger = getLogger(__name__)
 
@@ -92,6 +93,30 @@ class ChatTab(wx.lib.scrolledpanel.ScrolledPanel):
             on_images_changed=self._on_images_changed
         )
         
+        # Embeddings/RAG collapsible panel
+        self.embeddings_collapsible = wx.CollapsiblePane(
+            self, 
+            label="RAG & Document Search",
+            style=wx.CP_DEFAULT_STYLE | wx.CP_NO_TLW_RESIZE
+        )
+        self.embeddings_collapsible.SetToolTip(
+            "Expand to configure Retrieval Augmented Generation (RAG) settings.\n"
+            "RAG enhances chat responses with relevant context from your document collections."
+        )
+        self.embeddings_collapsible.Bind(wx.EVT_COLLAPSIBLEPANE_CHANGED, self._on_embeddings_pane_changed)
+        
+        # Create embeddings panel inside the collapsible pane
+        embeddings_pane = self.embeddings_collapsible.GetPane()
+        self.embeddings_chat_panel = EmbeddingsChatPanel(embeddings_pane)
+        
+        # Layout for embeddings pane content
+        embeddings_pane_sizer = wx.BoxSizer(wx.VERTICAL)
+        embeddings_pane_sizer.Add(self.embeddings_chat_panel, 1, wx.EXPAND | wx.ALL, 5)
+        embeddings_pane.SetSizer(embeddings_pane_sizer)
+        
+        # Initially collapsed
+        self.embeddings_collapsible.Collapse()
+        
         # Chat input controls
         input_sizer = wx.BoxSizer(wx.HORIZONTAL)
         self.chat_input = wx.TextCtrl(
@@ -108,8 +133,9 @@ class ChatTab(wx.lib.scrolledpanel.ScrolledPanel):
         chat_sizer = wx.BoxSizer(wx.VERTICAL)
         chat_sizer.Add(header_sizer, 0, wx.EXPAND | wx.ALL, 10)
         chat_sizer.Add(self.chat_output, 1, wx.EXPAND | wx.LEFT | wx.RIGHT, 10)
-        chat_sizer.Add(self.image_attachment_panel, 0, wx.EXPAND | wx.ALL, 10)
         chat_sizer.Add(input_sizer, 0, wx.EXPAND | wx.ALL, 10)
+        chat_sizer.Add(self.image_attachment_panel, 0, wx.EXPAND | wx.ALL, 10)
+        chat_sizer.Add(self.embeddings_collapsible, 0, wx.EXPAND | wx.ALL, 10)
         
         self.SetSizer(chat_sizer)
         
@@ -128,6 +154,12 @@ class ChatTab(wx.lib.scrolledpanel.ScrolledPanel):
         self.attached_images = images
         logger.info(f"Images updated: {len(images)} images attached")
     
+    def _on_embeddings_pane_changed(self, event: wx.CollapsiblePaneEvent) -> None:
+        """Handle embeddings collapsible pane expand/collapse."""
+        # Refresh layout when pane is expanded/collapsed
+        self.Layout()
+        logger.info(f"Embeddings pane {'collapsed' if event.GetCollapsed() else 'expanded'}")
+    
     def set_current_model(self, model: Optional[OllamaModel]) -> None:
         """Set the current model for chat.
         
@@ -143,6 +175,20 @@ class ChatTab(wx.lib.scrolledpanel.ScrolledPanel):
         else:
             self.image_attachment_panel.show_panel(False)
             self.image_attachment_panel.clear_images()
+        
+        # Update embeddings panel visibility (always show if embeddings are available)
+        try:
+            collections = self.embeddings_chat_panel.embeddings_manager.list_collections()
+            if collections:
+                self.embeddings_collapsible.Show(True)
+                # Keep collapsed by default - user can expand when needed
+            else:
+                self.embeddings_collapsible.Show(False)
+                self.embeddings_collapsible.Collapse()
+        except Exception:
+            # If embeddings not available, hide panel
+            self.embeddings_collapsible.Show(False)
+            self.embeddings_collapsible.Collapse()
         
         # Refresh layout
         self.Layout()
@@ -450,6 +496,25 @@ class ChatTab(wx.lib.scrolledpanel.ScrolledPanel):
         # Get attached images from the component
         attached_images = self.image_attachment_panel.get_attached_images()
         
+        # Get RAG context if enabled
+        rag_context = ""
+        if self.embeddings_chat_panel.is_rag_enabled():
+            try:
+                search_results = self.embeddings_chat_panel.search_for_context(message_text)
+                if search_results:
+                    context_parts = []
+                    for result in search_results:
+                        # Use metadata title if available, otherwise use document ID
+                        title = result.document.metadata.get('title', result.document.id) if result.document.metadata else result.document.id
+                        context_parts.append(f"Context from {title}: {result.document.content[:500]}...")
+                    rag_context = "\n\nRelevant context:\n" + "\n".join(context_parts)
+                    logger.info(f"Added RAG context from {len(search_results)} results")
+            except Exception as e:
+                logger.warning(f"Error getting RAG context: {e}")
+        
+        # Combine original message with RAG context
+        final_message = message_text + rag_context
+        
         # Clear input and disable controls
         self.chat_input.Clear()
         self.send_btn.Disable()
@@ -463,8 +528,8 @@ class ChatTab(wx.lib.scrolledpanel.ScrolledPanel):
         # Show that we're processing
         self.main_window.status_bar.SetStatusText("Generating response...", 0)
         
-        # Send message asynchronously
-        wx.CallAfter(self._send_message_async, message_text, attached_images)
+        # Send message asynchronously (use final_message with RAG context)
+        wx.CallAfter(self._send_message_async, final_message, attached_images)
     
     def _send_message_async(self, message: str, attached_images: List[ChatImage]) -> None:
         """Send message to model asynchronously with streaming."""
