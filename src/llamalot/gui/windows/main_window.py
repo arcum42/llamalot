@@ -1,8 +1,8 @@
 """
-Enhanced main window for LlamaLot application.
+Main window for LlamaLot application.
 
-Contains the enhanced GUI interface for managing Ollama models with
-real backend integration.
+Contains the main GUI interface for managing Ollama models with
+backend integration.
 """
 
 import wx
@@ -18,6 +18,10 @@ from llamalot.utils.logging_config import get_logger
 from llamalot.backend.ollama_client import OllamaClient
 from llamalot.backend.cache import CacheManager
 from llamalot.backend.database import DatabaseManager
+from llamalot.gui.managers.backend_manager import BackendManager
+from llamalot.gui.managers.menu_manager import MenuManager
+from llamalot.gui.managers.layout_manager import LayoutManager
+from llamalot.gui.managers.tab_manager import TabManager
 from llamalot.models import OllamaModel, ApplicationConfig, MessageRole
 from llamalot.models.chat import ChatConversation, ChatMessage, ChatImage, MessageRole
 from llamalot.gui.dialogs.image_viewer_dialog import ImageViewerDialog
@@ -35,14 +39,24 @@ from llamalot.gui.tabs.models_tab import ModelsTab
 logger = get_logger(__name__)
 
 
-class EnhancedMainWindow(wx.Frame):
-    """Enhanced main application window with real backend integration."""
+class MainWindow(wx.Frame):
+    """Main application window with backend integration."""
     
     def __init__(self):
-        """Initialize the enhanced main window."""
-        # Initialize backend first to get config
-        logger.info("Initializing enhanced main window")
+        """Initialize the main window."""
+        # Initialize backend manager
+        logger.info("Initializing main window")
+        self.backend_manager = BackendManager()
         self._init_backend()
+        
+        # Initialize menu manager
+        self.menu_manager = MenuManager(self)
+        
+        # Initialize layout manager
+        self.layout_manager = LayoutManager(self)
+        
+        # Initialize tab manager (will be configured after layout creation)
+        self.tab_manager = None
         
         # Use configuration for window size
         initial_size = wx.Size(
@@ -52,7 +66,7 @@ class EnhancedMainWindow(wx.Frame):
         
         super().__init__(
             parent=None,
-            title="LlamaLot - Enhanced Ollama Model Manager",
+            title="LlamaLot - Ollama Model Manager",
             size=initial_size
         )
         
@@ -93,29 +107,26 @@ class EnhancedMainWindow(wx.Frame):
         # Load initial data
         self._load_initial_data()
         
-        logger.info("Enhanced main window initialized successfully")
+        logger.info("Main window initialized successfully")
     
     def _init_backend(self) -> None:
-        """Initialize backend components."""
+        """Initialize backend components using BackendManager."""
         try:
-            # Initialize configuration
-            self.config = ApplicationConfig.load_from_file()
-            self.config.ensure_directories()
+            if not self.backend_manager.initialize():
+                wx.MessageBox(
+                    "Failed to initialize backend components", 
+                    "Initialization Error", 
+                    wx.OK | wx.ICON_ERROR
+                )
+                return
             
-            # Initialize database
-            db_path = Path(self.config.database_file or "llamalot.db")
-            self.db_manager = DatabaseManager(db_path)
+            # Set convenience properties for compatibility
+            self.config = self.backend_manager.config
+            self.ollama_client = self.backend_manager.ollama_client
+            self.cache_manager = self.backend_manager.cache_manager
+            self.db_manager = self.backend_manager.db_manager
             
-            # Initialize Ollama client with config
-            self.ollama_client = OllamaClient(self.config.ollama_server)
-            
-            # Initialize cache manager
-            self.cache_manager = CacheManager(
-                self.db_manager,
-                self.ollama_client
-            )
-            
-            logger.info("Backend components initialized successfully")
+            logger.info("Backend components initialized successfully via BackendManager")
             
         except Exception as e:
             logger.error(f"Failed to initialize backend: {e}")
@@ -126,85 +137,51 @@ class EnhancedMainWindow(wx.Frame):
             )
     
     def _create_main_layout(self) -> None:
-        """Create the main layout with notebook tabs."""
-        # Create main panel
-        self.main_panel = wx.Panel(self)
-        main_sizer = wx.BoxSizer(wx.VERTICAL)
+        """Create the main layout using LayoutManager."""
+        # Create layout using the manager
+        self.layout_manager.create_main_layout()
         
-        # Create notebook for tabs
-        self.notebook = wx.Notebook(self.main_panel)
+        # Get references to components created by the layout manager
+        self.main_panel = self.layout_manager.main_panel
+        self.notebook = self.layout_manager.notebook
+        self.status_bar = self.layout_manager.status_bar
         
-        # Create tabs
-        self.models_tab = ModelsTab(self.notebook, self)
-        self.notebook.AddPage(self.models_tab, "🔧 Models")
-        # Create chat tab
-        self.chat_tab = ChatTab(self.notebook, self)
-        self.notebook.AddPage(self.chat_tab, "💬 Chat")
-        self.batch_tab = BatchTab(self.notebook, self.ollama_client, self.cache_manager, self)
+        # Initialize and configure tab manager
+        self.tab_manager = TabManager(self, self.notebook)
+        self.tab_manager.set_backend_components(
+            self.ollama_client,
+            self.cache_manager,
+            self.db_manager,
+            self.config
+        )
         
-        main_sizer.Add(self.notebook, 1, wx.EXPAND | wx.ALL, 5)
-        self.main_panel.SetSizer(main_sizer)
+        # Create all tabs using the tab manager
+        self.tab_manager.create_all_tabs()
         
-        # Create status bar
-        self.status_bar = self.CreateStatusBar(2)
-        self.status_bar.SetStatusWidths([-1, 150])
-        self.status_bar.SetStatusText("Ready", 0)
-        self.status_bar.SetStatusText("No model selected", 1)
+        # Get references to the created tabs
+        self.models_tab = self.tab_manager.models_tab
+        self.chat_tab = self.tab_manager.chat_tab
+        self.batch_tab = self.tab_manager.batch_tab
+        self.embeddings_tab = self.tab_manager.embeddings_tab
+        self.history_tab = self.tab_manager.history_tab
         
     def _create_menu_bar(self) -> None:
-        """Create the menu bar."""
-        menubar = wx.MenuBar()
-        
-        # File menu
-        file_menu = wx.Menu()
-        
-        # Settings menu item
-        settings_item = file_menu.Append(wx.ID_PREFERENCES, "&Settings...\tCtrl+,", "Open application settings")
-        
-        file_menu.AppendSeparator()
-        
-        # Exit menu item
-        exit_item = file_menu.Append(wx.ID_EXIT, "E&xit\tCtrl+Q", "Exit the application")
-        
-        # Tools menu
-        tools_menu = wx.Menu()
-        
-        # Refresh models
-        refresh_item = tools_menu.Append(wx.ID_REFRESH, "&Refresh Models\tF5", "Refresh the model list")
-        
-        # Pull model
-        pull_item = tools_menu.Append(wx.ID_ANY, "&Pull Model...", "Pull a new model from registry")
-        
-        tools_menu.AppendSeparator()
-        
-        # New Chat
-        new_chat_item = tools_menu.Append(wx.ID_ANY, "&New Chat\tCtrl+N", "Start a new conversation with the current model")
-        
-        # Help menu
-        help_menu = wx.Menu()
-        about_item = help_menu.Append(wx.ID_ABOUT, "&About", "About LlamaLot")
-        
-        # Add menus to menubar
-        menubar.Append(file_menu, "&File")
-        menubar.Append(tools_menu, "&Tools")
-        menubar.Append(help_menu, "&Help")
-        
-        self.SetMenuBar(menubar)
+        """Create the menu bar using MenuManager."""
+        # Create menu bar using the manager
+        menu_bar = self.menu_manager.create_menu_bar()
+        self.SetMenuBar(menu_bar)
         
         # Bind menu events
-        self.Bind(wx.EVT_MENU, self._on_settings, settings_item)
-        self.Bind(wx.EVT_MENU, self._on_exit, exit_item)
-        self.Bind(wx.EVT_MENU, self._on_refresh_models, refresh_item)
-        self.Bind(wx.EVT_MENU, self._on_pull_model, pull_item)
-        self.Bind(wx.EVT_MENU, self.on_new_chat, new_chat_item)
-        self.Bind(wx.EVT_MENU, self._on_about, about_item)
-    
+        event_handlers = {
+            wx.ID_PREFERENCES: self._on_settings,
+            wx.ID_EXIT: self._on_exit,
+            wx.ID_REFRESH: self._on_refresh_models,
+            "Pull Model...": self._on_pull_model,
+            "New Chat": self.on_new_chat,
+            wx.ID_ABOUT: self._on_about,
+        }
         
-        # Create embeddings tab
-        self.embeddings_tab = EmbeddingsTab(self.notebook, self)
-        
-        # Create chat history tab
-        self.history_tab = HistoryTab(self.notebook, self.db_manager, self)
+        self.menu_manager.bind_menu_events(event_handlers)
         
     def get_embeddings_context(self, query: str, max_results: int = 3) -> List:
         """
@@ -1137,7 +1114,7 @@ Title:"""
     
     def on_close(self, event: wx.CloseEvent) -> None:
         """Handle window close event."""
-        logger.info("Enhanced main window closing")
+        logger.info("Main window closing")
         
         # Save current conversation before closing
         try:
@@ -1153,10 +1130,10 @@ Title:"""
         
         # Close backend connections
         try:
-            if hasattr(self, 'db_manager'):
-                self.db_manager.close()
+            if hasattr(self, 'backend_manager') and self.backend_manager:
+                self.backend_manager.cleanup()
         except Exception as e:
-            logger.error(f"Error closing database: {e}")
+            logger.error(f"Error during backend cleanup: {e}")
         
         event.Skip()  # Allow the window to close
     

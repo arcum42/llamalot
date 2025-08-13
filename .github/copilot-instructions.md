@@ -41,10 +41,24 @@ pip install -r requirements.txt
 ```
 src/llamalot/
 ├── main.py                    # Application entry point
-├── gui/windows/enhanced_main_window.py # Main GUI with model management
-├── backend/                   # Ollama client, database, cache, config
+├── gui/
+│   ├── windows/main_window.py # Main GUI with modular architecture
+│   ├── managers/              # Manager classes (Backend, Menu, Layout, Tab)
+│   ├── tabs/                  # Tab implementations (Models, Chat, Batch, etc.)
+│   ├── components/            # Reusable GUI components
+│   └── dialogs/               # Dialog windows
+├── backend/                   # Backend logic and API integration
+│   ├── ollama_client.py       # Ollama API client
+│   ├── database.py            # SQLite database management
+│   ├── cache.py               # Model caching system
+│   ├── config.py              # Configuration management
+│   └── embeddings_manager.py  # ChromaDB embeddings & RAG
 ├── models/                    # Data models and configuration
+│   ├── ollama_model.py        # Ollama model representation
+│   ├── config.py              # Application configuration models
+│   └── chat.py                # Chat conversation models
 └── utils/                     # Logging and utilities
+    └── logging_config.py      # Centralized logging setup
 ```
 
 ## Coding Standards
@@ -111,6 +125,8 @@ wxpython>=4.2.0      # GUI framework
 ollama>=0.5.3        # Ollama API client  
 requests>=2.31.0     # HTTP requests
 python-dateutil>=2.8.0  # Date handling
+chromadb>=0.4.24     # Vector database for embeddings
+markdown>=3.8.0      # Markdown processing for chat export
 ```
 
 ## Development Workflow

@@ -10,8 +10,7 @@ import sys
 import logging
 from typing import Optional
 
-from llamalot.gui.main_window import MainWindow
-from llamalot.gui.windows.enhanced_main_window import EnhancedMainWindow
+from llamalot.gui.windows.main_window import MainWindow
 from llamalot.utils.logging_config import setup_logging
 
 
@@ -30,7 +29,7 @@ class LlamaLotApp(wx.App):
             logging.info("Starting LlamaLot application")
             
             # Create and show the enhanced main window
-            self.main_window = EnhancedMainWindow()
+            self.main_window = MainWindow()
             self.main_window.Show()
             
             return True

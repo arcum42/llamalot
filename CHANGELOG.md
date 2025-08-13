@@ -5,9 +5,34 @@ All notable changes to LlamaLot will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.0.0] - 2025-08-12
 
 ### Added
+
+#### 🏗️ Complete Architecture Refactoring
+- **Modular Architecture**: Implemented manager-based system with clean separation of concerns
+  - `BackendManager`: Centralized backend component initialization and coordination
+  - `MenuManager`: Handles all menu creation and event binding
+  - `LayoutManager`: Manages main window layout and notebook organization
+  - `TabManager`: Coordinates creation and management of all application tabs
+- **File Reorganization**: Renamed `enhanced_main_window.py` to `main_window.py` with class name `MainWindow`
+- **Code Cleanup**: Removed 1,012 lines of dead code across multiple unused legacy files
+
+#### 🔍 Embeddings & RAG Support
+- **ChromaDB Integration**: Full vector database support with persistent storage
+- **Document Collections**: Create, manage, and search document collections
+- **Semantic Search**: Vector similarity search with scoring for retrieval augmented generation
+- **Multiple Embedding Models**: Support for various Ollama embedding models
+- **RAG Integration**: Contextual chat responses using relevant document excerpts
+
+#### 🖼️ Advanced Batch Processing
+- **Multi-Image Processing**: Process multiple images with vision models simultaneously
+- **File Suffix System**: Flexible file naming with read/write suffixes for workflow management
+- **Smart Wildcard System**: `%description%` wildcard to include existing file content in prompts
+- **Visual Management**: Selectable image thumbnails with bulk operations
+- **Enhanced Timeout Handling**: Improved batch processing with 180-second timeouts for large models
+
+### Changed
 
 #### 💬 Advanced Chat System
 

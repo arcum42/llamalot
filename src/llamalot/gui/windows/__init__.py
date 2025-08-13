@@ -2,8 +2,8 @@
 Main application windows for LlamaLot.
 """
 
-from .enhanced_main_window import EnhancedMainWindow
+from .main_window import MainWindow
 
 __all__ = [
-    'EnhancedMainWindow',
+    'MainWindow',
 ]

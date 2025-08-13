@@ -1,44 +1,65 @@
-# LlamaLot Embeddings Support - Implementation Summary
+# LlamaLot Embeddings & RAG Support
 
 ## Overview
 
-I've successfully implemented comprehensive embeddings support for LlamaLot, integrating ChromaDB for vector database operations and Ollama for embedding generation. This enables powerful Retrieval Augmented Generation (RAG) capabilities within your application.
+LlamaLot includes comprehensive embeddings support with ChromaDB integration, enabling powerful Retrieval Augmented Generation (RAG) capabilities for enhanced chat responses.
 
-## What Was Implemented
+## Features
 
-### 1. Core Backend Infrastructure
+### Document Management
+- Create and manage document collections
+- Import text documents and web content
+- Automatic text chunking and embedding generation
+- Collection statistics and metadata management
 
-#### EmbeddingsManager (`src/llamalot/backend/embeddings_manager.py`)
-- **Purpose**: Central manager for all embedding operations
-- **Features**:
-  - ChromaDB integration with persistent storage
-  - Document collection management (create, delete, list, clear)
-  - Vector embedding generation via Ollama models
-  - Semantic similarity search with scoring
-  - Batch document processing
-  - Collection statistics and metadata management
+### Vector Search
+- Semantic similarity search with relevance scoring
+- Configurable search result limits
+- Integration with chat for contextual responses
+- Support for multiple embedding models via Ollama
 
-#### Extended OllamaClient (`src/llamalot/backend/ollama_client.py`)
-- **New Methods**:
-  - `generate_embeddings()`: Generate embeddings for text
-  - `get_embedding_models()`: List available embedding models
-  - `test_embedding_model()`: Verify model embedding support
-- **Integration**: Seamlessly works with existing chat and model management
+### RAG Integration
+- Automatic context retrieval for chat queries
+- Seamless integration with existing chat workflow
+- Configurable relevance thresholds
+- Real-time embedding generation
 
-#### Data Models
-- **Document**: Represents documents with content, metadata, and embeddings
-- **SearchResult**: Contains similarity search results with scoring
-- **Exception Types**: EmbeddingsError, VectorDatabaseError for proper error handling
+## Usage
 
-### 2. Dependencies and Configuration
+### Creating Collections
+1. Navigate to the "🔍 Embeddings" tab
+2. Click "Create Collection" and provide a name
+3. Add documents via text input or file upload
+4. Documents are automatically processed and embedded
 
-#### Requirements Update
-- Added `chromadb>=0.4.24` to requirements.txt
-- ChromaDB provides persistent vector storage with SQLite backend
-- Automatic dependency management for embeddings workflow
+### Searching Collections
+- Use the search interface to find relevant documents
+- Results include similarity scores and source metadata
+- Click results to view full document content
 
-#### Configuration Integration
-- Embeddings data stored in `~/.llamalot/embeddings/`
+### RAG-Enhanced Chat
+- When enabled, chat queries automatically search relevant collections
+- Context is seamlessly integrated into model responses
+- Configurable number of context results per query
+
+## Technical Details
+
+### Storage
+- Collections stored in `~/.llamalot/embeddings/`
+- ChromaDB provides persistent vector storage
+- SQLite backend for metadata and configuration
+
+### Embedding Models
+Supported Ollama embedding models:
+- `nomic-embed-text`
+- `mxbai-embed-large`
+- `all-minilm`
+- Any Ollama model with embedding capabilities
+
+### Performance
+- Batch processing for large document sets
+- Efficient vector indexing with ChromaDB
+- Configurable chunk sizes for optimal retrieval
 - Persistent collections survive application restarts
 - Configurable default embedding models
 - Integrated with existing ConfigurationManager

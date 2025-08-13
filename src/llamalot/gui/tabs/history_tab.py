@@ -14,7 +14,7 @@ from llamalot.utils.logging_config import get_logger
 from llamalot.models.chat import ChatConversation, MessageRole
 
 if TYPE_CHECKING:
-    from llamalot.gui.windows.enhanced_main_window import EnhancedMainWindow
+    from llamalot.gui.windows.main_window import MainWindow
 
 logger = get_logger(__name__)
 
@@ -22,7 +22,7 @@ logger = get_logger(__name__)
 class HistoryTab:
     """History tab component for viewing chat conversation history."""
     
-    def __init__(self, parent_notebook, db_manager, main_window: Optional['EnhancedMainWindow'] = None):
+    def __init__(self, parent_notebook, db_manager, main_window: Optional['MainWindow'] = None):
         """Initialize the history tab."""
         self.notebook = parent_notebook
         self.db_manager = db_manager
