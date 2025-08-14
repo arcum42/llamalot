@@ -14,6 +14,7 @@ from llamalot.gui.tabs.chat_tab import ChatTab
 from llamalot.gui.tabs.history_tab import HistoryTab
 from llamalot.gui.tabs.embeddings_tab import EmbeddingsTab
 from llamalot.gui.tabs.batch_tab import BatchTab
+from llamalot.gui.tabs.prompts_tab import PromptsTab
 
 logger = get_logger(__name__)
 
@@ -32,6 +33,7 @@ class TabManager:
         self.history_tab = None
         self.embeddings_tab = None
         self.batch_tab = None
+        self.prompts_tab = None
         
         # Backend components (to be set by parent)
         self.ollama_client = None
@@ -57,6 +59,7 @@ class TabManager:
             self._create_models_tab()
             self._create_chat_tab()
             self._create_batch_tab()
+            self._create_prompts_tab()
             self._create_embeddings_tab()
             self._create_history_tab()
             
@@ -94,10 +97,21 @@ class TabManager:
             logger.error(f"Failed to create chat tab: {e}")
             raise
     
+    def _create_prompts_tab(self) -> None:
+        """Create the prompts management tab."""
+        try:
+            self.prompts_tab = PromptsTab(self.notebook, self.parent)
+            self.notebook.AddPage(self.prompts_tab, "📝 Prompts")
+            logger.info("Prompts tab created")
+        except Exception as e:
+            logger.error(f"Failed to create prompts tab: {e}")
+            raise
+    
     def _create_history_tab(self) -> None:
         """Create the conversation history tab."""
         try:
             self.history_tab = HistoryTab(self.notebook, self.db_manager, self.parent)
+            self.notebook.AddPage(self.history_tab, "📜 History")
             logger.info("History tab created")
         except Exception as e:
             logger.error(f"Failed to create history tab: {e}")
@@ -107,6 +121,7 @@ class TabManager:
         """Create the embeddings management tab."""
         try:
             self.embeddings_tab = EmbeddingsTab(self.notebook, self.parent)
+            self.notebook.AddPage(self.embeddings_tab, "🔗 Embeddings")
             logger.info("Embeddings tab created")
         except Exception as e:
             logger.error(f"Failed to create embeddings tab: {e}")
@@ -121,6 +136,7 @@ class TabManager:
                 self.cache_manager, 
                 self.parent
             )
+            self.notebook.AddPage(self.batch_tab, "🔄 Batch Processing")
             logger.info("Batch tab created")
         except Exception as e:
             logger.error(f"Failed to create batch tab: {e}")
@@ -133,7 +149,8 @@ class TabManager:
             'chat': self.chat_tab,
             'history': self.history_tab,
             'embeddings': self.embeddings_tab,
-            'batch': self.batch_tab
+            'batch': self.batch_tab,
+            'prompts': self.prompts_tab
         }
         return tab_map.get(tab_name)
     
@@ -149,7 +166,7 @@ class TabManager:
     
     def refresh_all_tabs(self) -> None:
         """Refresh all tabs."""
-        for tab_name in ['models', 'chat', 'history', 'embeddings', 'batch']:
+        for tab_name in ['models', 'chat', 'history', 'embeddings', 'batch', 'prompts']:
             self.refresh_tab(tab_name)
     
     def select_tab_by_index(self, index: int) -> bool:
@@ -193,7 +210,7 @@ class TabManager:
     def cleanup_tabs(self) -> None:
         """Clean up all tabs."""
         tabs = [self.models_tab, self.chat_tab, self.history_tab, 
-                self.embeddings_tab, self.batch_tab]
+                self.embeddings_tab, self.batch_tab, self.prompts_tab]
         
         for tab in tabs:
             if tab and hasattr(tab, 'cleanup'):
@@ -208,3 +225,4 @@ class TabManager:
         self.history_tab = None
         self.embeddings_tab = None
         self.batch_tab = None
+        self.prompts_tab = None

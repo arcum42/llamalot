@@ -1071,3 +1071,23 @@ Title:"""
         """
         self.current_conversation = conversation
         logger.info(f"Current conversation set to: {conversation.title if conversation else 'None'}")
+    
+    def start_new_chat(self) -> None:
+        """Start a new chat conversation (alias for start_new_conversation)."""
+        self.start_new_conversation()
+    
+    def set_input_text(self, text: str) -> None:
+        """Set the text in the chat input field.
+        
+        Args:
+            text: The text to set in the input field
+        """
+        try:
+            if hasattr(self, 'chat_input'):
+                self.chat_input.SetValue(text)
+                self.chat_input.SetInsertionPointEnd()
+                logger.info("Input text set in chat tab")
+            else:
+                logger.warning("Chat tab does not have chat_input field")
+        except Exception as e:
+            logger.error(f"Error setting input text in chat tab: {e}")

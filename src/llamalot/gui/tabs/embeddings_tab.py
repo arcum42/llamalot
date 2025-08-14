@@ -13,25 +13,30 @@ from llamalot.gui.components.embeddings_panel import EmbeddingsPanel
 logger = get_logger(__name__)
 
 
-class EmbeddingsTab:
+class EmbeddingsTab(wx.Panel):
     """Embeddings tab component for managing embeddings and RAG functionality."""
     
     def __init__(self, parent_notebook, main_window_ref=None):
         """Initialize the embeddings tab."""
+        super().__init__(parent_notebook)
+        
         self.notebook = parent_notebook
         self.main_window = main_window_ref  # Reference to main window for status updates
         
-        # Create the tab and add to notebook
+        # Create the tab content
         self.create_embeddings_tab()
         
     def create_embeddings_tab(self) -> None:
         """Create the embeddings management tab."""
+        # Create a sizer for the tab
+        sizer = wx.BoxSizer(wx.VERTICAL)
+        
         # Create the embeddings panel using our comprehensive EmbeddingsPanel component
         try:
-            self.embeddings_panel = EmbeddingsPanel(self.notebook)
+            self.embeddings_panel = EmbeddingsPanel(self)
             
-            # Add tab to notebook
-            self.notebook.AddPage(self.embeddings_panel, "🔍 Embeddings", False)
+            # Add panel to the sizer
+            sizer.Add(self.embeddings_panel, 1, wx.EXPAND | wx.ALL, 5)
             
             # Bind events for chat integration
             self.embeddings_panel.Bind(wx.EVT_MENU, self.on_embeddings_settings_changed)
@@ -41,17 +46,14 @@ class EmbeddingsTab:
         except Exception as e:
             logger.error(f"Error creating embeddings tab: {e}")
             # Create a simple placeholder panel if EmbeddingsPanel fails
-            placeholder_panel = wx.Panel(self.notebook)
             error_text = wx.StaticText(
-                placeholder_panel, 
+                self, 
                 label=f"Embeddings functionality unavailable: {e}\nPlease check your configuration."
             )
-            sizer = wx.BoxSizer(wx.VERTICAL)
             sizer.Add(error_text, 1, wx.EXPAND | wx.ALL, 20)
-            placeholder_panel.SetSizer(sizer)
-            
-            self.notebook.AddPage(placeholder_panel, "🔍 Embeddings", False)
             self.embeddings_panel = None  # Mark as unavailable
+        
+        self.SetSizer(sizer)
     
     def on_embeddings_settings_changed(self, event):
         """Handle embeddings settings changes for chat integration."""

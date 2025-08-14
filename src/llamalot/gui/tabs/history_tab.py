@@ -20,26 +20,25 @@ if TYPE_CHECKING:
 logger = get_logger(__name__)
 
 
-class HistoryTab:
+class HistoryTab(wx.lib.scrolledpanel.ScrolledPanel):
     """History tab component for viewing chat conversation history."""
     
     def __init__(self, parent_notebook, db_manager, main_window: Optional['MainWindow'] = None):
         """Initialize the history tab."""
+        super().__init__(parent_notebook)
+        self.SetupScrolling()
+        
         self.notebook = parent_notebook
         self.db_manager = db_manager
         self.main_window = main_window  # Reference to main window for chat operations
         
-        # Create the tab and add to notebook
+        # Create the tab content
         self.create_history_tab()
         
     def create_history_tab(self) -> None:
         """Create the chat history tab with conversation list and viewer."""
-        # Create the history panel
-        self.history_panel = wx.lib.scrolledpanel.ScrolledPanel(self.notebook)
-        self.history_panel.SetupScrolling()
-        
         # Main splitter for conversation list and detail view
-        splitter = wx.SplitterWindow(self.history_panel, style=wx.SP_3D | wx.SP_LIVE_UPDATE)
+        splitter = wx.SplitterWindow(self, style=wx.SP_3D | wx.SP_LIVE_UPDATE)
         
         # Left panel: Conversation list
         list_panel = wx.Panel(splitter)
@@ -130,10 +129,7 @@ class HistoryTab:
         # Main panel layout
         history_sizer = wx.BoxSizer(wx.VERTICAL)
         history_sizer.Add(splitter, 1, wx.EXPAND)
-        self.history_panel.SetSizer(history_sizer)
-        
-        # Add tab to notebook
-        self.notebook.AddPage(self.history_panel, "📚 History", False)
+        self.SetSizer(history_sizer)
         
         # Bind events
         self.refresh_history_btn.Bind(wx.EVT_BUTTON, self.on_refresh_history)
@@ -275,7 +271,7 @@ class HistoryTab:
             
             # Confirm deletion
             dlg = wx.MessageDialog(
-                self.history_panel,
+                self,
                 f"Are you sure you want to delete the conversation '{conv_title}'?\n\nThis action cannot be undone.",
                 "Confirm Deletion",
                 wx.YES_NO | wx.NO_DEFAULT | wx.ICON_QUESTION
@@ -487,7 +483,7 @@ class HistoryTab:
             
             # Show format selection dialog
             format_dlg = wx.SingleChoiceDialog(
-                self.history_panel,
+                self,
                 "Choose export format:",
                 "Export Format",
                 ["Text (.txt)", "Markdown (.md)"]
@@ -510,7 +506,7 @@ class HistoryTab:
             
             # Show file save dialog
             with wx.FileDialog(
-                self.history_panel,
+                self,
                 f"Export conversation as {extension[1:].upper()}",
                 defaultFile=default_filename,
                 wildcard=f"{extension[1:].upper()} files (*{extension})|*{extension}|All files (*.*)|*.*",

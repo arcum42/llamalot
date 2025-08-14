@@ -39,29 +39,103 @@ pip install -r requirements.txt
 ## Project Structure
 
 ```
-src/llamalot/
-├── main.py                    # Application entry point
-├── gui/
-│   ├── windows/main_window.py # Main GUI with modular architecture
-│   ├── managers/              # Manager classes (Backend, Menu, Layout, Tab)
-│   ├── tabs/                  # Tab implementations (Models, Chat, Batch, etc.)
-│   ├── components/            # Reusable GUI components
-│   └── dialogs/               # Dialog windows
-├── backend/                   # Backend logic and API integration
-│   ├── ollama_client.py       # Ollama API client
-│   ├── database.py            # SQLite database management
-│   ├── cache.py               # Model caching system
-│   ├── config.py              # Configuration management
-│   └── embeddings_manager.py  # ChromaDB embeddings & RAG
-├── models/                    # Data models and configuration
-│   ├── ollama_model.py        # Ollama model representation
-│   ├── config.py              # Application configuration models
-│   └── chat.py                # Chat conversation models
-└── utils/                     # Logging and utilities
-    └── logging_config.py      # Centralized logging setup
+├── main.py                    # Application entry point (legacy, use src/llamalot/main.py)
+├── requirements.txt           # Python dependencies
+├── pyproject.toml            # Project configuration and build settings
+├── CHANGELOG.md              # Project changelog and version history
+├── README.md                 # Project documentation
+├── LICENSE                   # Project license
+├── scripts/                  # Development and utility scripts
+│   ├── demo_backend.py       # Backend demonstration script
+│   └── demo_models.py        # Model management demonstration
+├── examples/                 # Usage examples and demonstrations
+│   ├── README.md             # Examples documentation
+│   └── example_embeddings.py # ChromaDB embeddings usage example
+├── tests/                    # Unit tests and test utilities
+│   ├── __init__.py           # Test package initialization
+│   ├── test_structure.py     # Project structure validation tests
+│   ├── test_database.py      # Database functionality tests
+│   ├── test_models.py        # Data model tests
+│   ├── test_config.py        # Configuration management tests
+│   ├── test_ollama_client.py # Ollama client integration tests
+│   ├── test_batch_processing.py # Batch processing and wildcard tests
+│   ├── test_settings_dialog.py  # Settings dialog functionality tests
+│   └── test_embeddings.py   # Embeddings functionality tests
+├── test_images/              # Test images for development and testing
+│   ├── README.md             # Test images documentation
+│   ├── test_batch_image.png  # Batch processing test image
+│   ├── test_image.png        # General test image
+│   └── test_vision.png       # Vision model test image
+├── src/llamalot/             # Main application source code
+│   ├── main.py               # Application entry point
+│   ├── __init__.py           # Package initialization
+│   ├── gui/                  # GUI components and windows
+│   │   ├── __init__.py       # GUI package initialization
+│   │   ├── main_window.py    # Main application window
+│   │   ├── managers/         # Manager classes for application logic
+│   │   │   ├── __init__.py   # Managers package initialization
+│   │   │   ├── backend_manager.py    # Backend coordination and management
+│   │   │   ├── menu_manager.py       # Menu system management
+│   │   │   ├── layout_manager.py     # Layout and UI management
+│   │   │   └── tab_manager.py        # Tab management system
+│   │   ├── tabs/             # Tab implementations for different features
+│   │   │   ├── __init__.py   # Tabs package initialization
+│   │   │   ├── chat_tab.py   # Chat interface and conversation management
+│   │   │   ├── models_tab.py # Model management and information display
+│   │   │   ├── batch_tab.py  # Batch processing interface
+│   │   │   └── embeddings_tab.py # Embeddings and RAG interface
+│   │   ├── components/       # Reusable GUI components
+│   │   │   ├── __init__.py   # Components package initialization
+│   │   │   ├── batch_processing_panel.py # Batch processing with wildcards
+│   │   │   ├── embeddings_chat_panel.py  # Embeddings integration panel
+│   │   │   ├── image_attachment_panel.py # Image attachment handling
+│   │   │   └── selectable_image_panel.py # Image selection interface
+│   │   ├── dialogs/          # Dialog windows for various functions
+│   │   │   ├── __init__.py   # Dialogs package initialization
+│   │   │   ├── settings_dialog.py       # Application settings configuration
+│   │   │   ├── create_model_dialog.py   # Model creation interface
+│   │   │   ├── collection_manager_dialog.py # Embeddings collection management
+│   │   │   └── document_editor_dialog.py    # Document editing for embeddings
+│   │   └── windows/          # Main window implementations
+│   │       ├── __init__.py   # Windows package initialization
+│   │       └── main_window.py # Enhanced main window implementation
+│   ├── backend/              # Backend logic and API integration
+│   │   ├── __init__.py       # Backend package initialization
+│   │   ├── ollama_client.py  # Ollama API client with timeout configuration
+│   │   ├── database.py       # SQLite database management with migrations
+│   │   ├── cache.py          # Model caching system
+│   │   ├── config.py         # Configuration management and persistence
+│   │   ├── embeddings_manager.py # ChromaDB embeddings & RAG functionality
+│   │   └── exceptions.py     # Custom exception classes
+│   ├── models/               # Data models and configuration classes
+│   │   ├── __init__.py       # Models package initialization
+│   │   ├── ollama_model.py   # Ollama model representation and capabilities
+│   │   ├── config.py         # Application configuration models with validation
+│   │   └── chat.py           # Chat conversation and message models
+│   └── utils/                # Logging and utility functions
+│       ├── __init__.py       # Utils package initialization
+│       └── logging_config.py # Centralized logging setup and configuration
+└── venv/                     # Virtual environment (not in version control)
 ```
 
 ## Coding Standards
+
+### Testing Requirements
+- **ALL new functionality MUST include comprehensive unit tests**
+- **Create all tests in the `tests/` directory with descriptive filenames**
+- **Test files should follow the pattern `test_<component_name>.py`**
+- **Tests must be independent of GUI dependencies when possible**
+- **Use proper mocking for external dependencies (Ollama API, file system, etc.)**
+- **Include both positive and negative test cases**
+- **Test edge cases and error conditions**
+- **Run tests with: `source venv/bin/activate && python -m pytest tests/ -v`**
+
+### Version Control Guidelines
+- **NEVER add or change version numbers unless explicitly instructed**
+- **Version numbers should only be updated for official releases after thorough testing**
+- **All version changes must be documented in CHANGELOG.md**
+- **Use semantic versioning (MAJOR.MINOR.PATCH) for releases**
+- **Development work should not include version bumps**
 
 ### Data Models
 - Use `@dataclass` for all data models with comprehensive type hints
@@ -71,6 +145,8 @@ src/llamalot/
 ### GUI Development with wxPython
 - Use proper event binding patterns with `self.Bind()`
 - Implement tabbed interfaces with `wx.Notebook` for complex UIs
+- **Prefer scrollable panels in notebook tabs** to handle content overflow gracefully
+- **Use compact layouts** to maximize screen real estate and improve usability
 - Always include error handling and user feedback via `wx.MessageBox`
 - Use `wx.CallAfter()` for thread-safe GUI updates
 
